@@ -1,31 +1,37 @@
 UNAME := $(shell uname)
 
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+DESTDIR ?=
+
 ifeq ($(UNAME),Linux)
-INSTALL_CMDS = \
-	echo "Installing ssh-ask-pass.sh" && \
-	cp -f ssh-ask-pass-linux.sh /usr/local/bin/ssh-ask-pass.sh && \
-	chmod +x /usr/local/bin/ssh-ask-pass.sh && \
-	echo "Installation complete."
-
-UNINSTALL_CMDS = \
-	echo "Uninstalling ssh-ask-pass.sh" && \
-	rm -f /usr/local/bin/ssh-ask-pass.sh && \
-	echo "Uninstallation complete."
-else
-INSTALL_CMDS = \
-	echo "$(UNAME) is not supported." && \
-	exit 1
-
-UNINSTALL_CMDS = \
-	echo "$(UNAME) is not supported." && \
-	exit 1
-endif
+INSTALL_SCRIPT = ssh-ask-pass-linux.sh
+INSTALL_PATH = $(DESTDIR)$(BINDIR)/ssh-ask-pass.sh
 
 install:
-	@sh -c '$(INSTALL_CMDS)'
+	@echo "Installing to $(INSTALL_PATH)"
+	@install -Dm755 $(INSTALL_SCRIPT) $(INSTALL_PATH)
+	@echo "Installation complete."
 
 uninstall:
-	@sh -c '$(UNINSTALL_CMDS)'
+	@echo "Uninstalling $(INSTALL_PATH)"
+	@rm -f $(INSTALL_PATH)
+	@echo "Uninstallation complete."
 
-.PHONY: install uninstall
+else
+
+install uninstall:
+	@echo "$(UNAME) is not supported."
+	@exit 1
+
+endif
+
+print-paths:
+	@echo "PREFIX: $(PREFIX)"
+	@echo "BINDIR: $(BINDIR)"
+	@echo "DESTDIR: $(DESTDIR)"
+	@echo "INSTALL_PATH: $(INSTALL_PATH)"
+
+
+.PHONY: install uninstall print-paths
 .DEFAULT_GOAL := install
