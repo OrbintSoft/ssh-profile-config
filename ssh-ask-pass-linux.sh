@@ -6,7 +6,7 @@ log_file="$key_dir/sessions.log"
 log_message() {
 	local level="$1"
 	local message="$2"
-    local datetime
+	local datetime
 	datetime=$(date '+%Y-%m-%d %H:%M:%S')
 	echo "$datetime | [$level] $message" >> "$log_file"
 }
