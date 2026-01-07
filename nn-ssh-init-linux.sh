@@ -12,7 +12,8 @@ max_attempts=3
 
 # Function to find latest valid SSH_AUTH_SOCK
 find_latest_ssh_sock() {
-    find "/tmp" -type s -user "$USER" -name 'agent.*' -print0 2>/dev/null | xargs -0 ls -1t 2>/dev/null | head -n 1
+	find "$HOME/.ssh/agent" -type s 2>/dev/null | head -n 1 && return 0
+    find "/tmp" -type s -user "$USER" -name 'agent.*' -print0 2>/dev/null | xargs -0 -r ls -1t 2>/dev/null | head -n 1
 }
 
 log_message() {
