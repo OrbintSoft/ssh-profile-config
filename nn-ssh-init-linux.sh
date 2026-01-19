@@ -88,6 +88,28 @@ if [ "${#agent_pids[@]}" -gt 0 ]; then
         log_message "INFO" "Set SSH_AGENT_PID=$SSH_AGENT_PID" "true"
     fi
 
+	# Test if the agent is responsive
+	agent_test_timeout=2
+	if ! timeout "$agent_test_timeout" ssh-add -l > /dev/null 2>&1; then
+		agent_exit_code=$?
+		if [ $agent_exit_code -eq 124 ]; then
+			log_message "ERROR" "ssh-agent with PID $SSH_AGENT_PID is not responding in $agent_test_timeout" "true"
+		else
+			log_message "ERROR" "ssh-agent with PID $SSH_AGENT_PID returned unexpected exit code $agent_exit_code." "true"
+		fi
+		# Kill the unresponsive agent
+		kill "$SSH_AGENT_PID" 2>/dev/null || kill -9 "$SSH_AGENT_PID" 2>/dev/null
+		log_message "INFO" "Killed unresponsive ssh-agent with PID $SSH_AGENT_PID."
+		export SSH_AGENT_PID=""
+		export SSH_AUTH_SOCK=""
+		# Start a new agent
+		log_message "INFO" "Starting a new ssh-agent..."
+		eval "$(ssh-agent -s)" > /dev/null
+		log_message "INFO" "New ssh-agent started with PID $SSH_AGENT_PID and socket $SSH_AUTH_SOCK"
+	else
+		log_message "INFO" "ssh-agent with PID $SSH_AGENT_PID is working as expected."
+	fi
+
 else
     # No ssh-agent running, start a new one
     log_message "INFO" "No ssh-agent running. Starting a new one..."
