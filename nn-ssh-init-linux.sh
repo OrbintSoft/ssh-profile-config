@@ -143,7 +143,7 @@ if [[ $- == *i* ]]; then
 						break
 					fi
 					# Add the key using ssh-add with the temporary keyctl
-                    SSH_TEMP_KEYCTL="$ssh_tmp_ketctl" SSH_PASS_UUID="$ssh_pass_uuid" SSH_ASKPASS="$ssh_askpass_script" setsid ssh-add "$keyfile" < /dev/null
+                    SSH_TEMP_KEYCTL="$ssh_tmp_ketctl" SSH_PASS_UUID="$ssh_pass_uuid" SSH_ASKPASS="$ssh_askpass_script" setsid timeout 60 ssh-add "$keyfile" < /dev/null
                     ssh_add_result="$?"
 					# If the key was added successfully, store the passphrase in the secret store
                     if [ "$passphrase_stored" = false ] && [ "$ssh_add_result" -eq 0 ]; then
