@@ -1,0 +1,5 @@
+# Scratch and working-memory files: per-activity step trackers and ad-hoc notes.
+# These are free-form and never committed.
+*-steps.md
+*.scratch
+scratch/
