@@ -76,3 +76,11 @@ appending. See `docs/DESIGN-NOTES.md` for background and the June 2026 incident.
     "we used to…", no PR storytelling) and contains **no references to PLAN.md, phase
     numbers, or rule numbers** — those are internal bookkeeping. The commit message and
     PLAN.md hold the history and the roadmap pointers; the code explains itself.
+
+16. **License compliance (EUPL 1.2).** The project is licensed under the European
+    Union Public Licence v. 1.2 (see `LICENSE` and `COPYRIGHT.md`), and the copyright
+    holder must stay free to relicense it on request. Before adding any third-party
+    dependency, runtime-invoked tool, or copied code, verify its licence is compatible
+    with the EUPL 1.2 **and** does not obstruct relicensing; record any incompatibility
+    and do not add it without explicit authorization. Keep `LICENSE`, `COPYRIGHT.md`,
+    and `AUTHORS.md` accurate as the code, dependencies, and contributors change.
