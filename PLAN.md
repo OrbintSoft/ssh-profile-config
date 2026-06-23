@@ -208,11 +208,11 @@ the later design. → goals 16; open decisions 1, 11; rules 12, 14.
 
 Sub-phases (detailed steps written when we start each one):
 
-- **0.1 — Repo hygiene.** Rename `makefile` → `Makefile` (`git mv`). Add an
+- **0.1 — Repo hygiene. ✅ Done.** Renamed `makefile` → `Makefile`; added an
   `.editorconfig` (UTF-8, LF line endings, final newline, trim trailing whitespace,
   per-file-type indentation) and a `.gitattributes` (`* text=auto eol=lf`, explicit
-  handling for shell scripts and any binaries) to fix one formatting/line-ending
-  standard across the repo. `.gitignore` already covers scratch/step files.
+  handling for shell scripts) to fix one formatting/line-ending standard across the
+  repo. `.gitignore` already covers scratch/step files.
 - **0.2 — Threat model.** The two lines are recorded in open decision 1 above
   (documentation only).
 - **0.3 — `make lint` target (rule 12).** Wire into `make lint`: `lint-sh`

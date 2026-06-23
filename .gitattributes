@@ -1,0 +1,6 @@
+# Normalise line endings: store every text file with LF in the repo.
+* text=auto eol=lf
+
+# Shell scripts are always LF text.
+*.sh  text eol=lf
+*.zsh text eol=lf
