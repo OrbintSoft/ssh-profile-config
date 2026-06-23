@@ -85,6 +85,25 @@ still to be made.
     least on Linux. macOS/Windows to be decided — Windows containers exist, macOS
     is unclear; possibly Vagrant, otherwise CI runners, or best-effort on macOS.
 
+### Installation & filesystem
+
+17. **Two installation modes.** *System-wide* (requires `sudo`, as today:
+    `/etc/profile.d`, `$BINDIR`) **or** *per-user* (no root, everything under
+    `$HOME`). The same logic must work in both; only the paths and the bootstrap
+    hook differ.
+
+18. **Least-privilege execution.** Executables/scripts run with the privileges of
+    the user who opens the terminal — never escalate. The only exception is the
+    diagnostic tool (goal 8), which may be run with `sudo` on demand to inspect the
+    full picture.
+
+19. **Standard file locations, outside `~/.ssh`.** Config in `/etc/<name>/` (system)
+    or `$XDG_CONFIG_HOME` (per-user); logs/state in `$XDG_STATE_HOME`; the agent
+    socket in `$XDG_RUNTIME_DIR` (per-user, mode 0700) — all with correct
+    ownership/permissions. Never store our own files under `~/.ssh`: it is reserved
+    for OpenSSH and, as the June 2026 incident showed, creating `~/.ssh/agent/` is
+    precisely what makes OpenSSH 10.x relocate the socket to a random path.
+
 ---
 
 ## Open decisions
@@ -97,6 +116,12 @@ honoured) before or during the phases. Each notes the related goal.
    secret store do **not** protect against other processes of the same user — by
    design, since those processes must be able to use the key. Decide the target
    (other local users / root / swap & coredumps / logs) — it drives the design.
+   **Decided (Phase 0) — threat model (two lines):**
+   *Protects* the passphrase from logs, shell history, `argv`
+   (`ps` / `/proc/<pid>/cmdline`) and plaintext on disk — at rest it lives only in
+   the OS secret store, in transit only via a short-lived `keyctl` entry / stdin.
+   *Does not* defend against other same-user processes or root (both can already use
+   the key in the agent, by design); swap/coredump hardening is out of scope.
 
 2. **No passphrase in `argv` (goal 2).** Never pass the passphrase as a
    command-line argument (visible via `ps` / `/proc/<pid>/cmdline`). Feed it
@@ -149,9 +174,101 @@ honoured) before or during the phases. Each notes the related goal.
     break. While there, decide the lint story: wire a `make lint` target
     (shellcheck + a Markdown linter) and align CI with it. Go and a Markdown linter
     will be new file types needing a lint decision.
+    **Decided (Phase 0):** `make lint` runs `shellcheck` + `shfmt -d` +
+    `markdownlint-cli2` + `checkmake` + `actionlint`; CI declares `permissions:
+    contents: read` and invokes the same `make lint`, replacing the per-tool actions
+    (which would need write scopes for inline annotations). Per-file-type lint
+    decisions are recorded under Phase 0.
+
+12. **Install modes & path layout (goals 17–19).** Realise the two install modes
+    and the XDG/FHS path layout in Phase 1 / packaging — config in `/etc` or
+    `$XDG_CONFIG_HOME`, state/logs in `$XDG_STATE_HOME`, agent socket in
+    `$XDG_RUNTIME_DIR`, nothing under `~/.ssh`. Open within: the per-user mode can't
+    write `/etc/profile.d`, so its bootstrap hook moves to `~/.bashrc` /
+    `~/.config/plasma-workspace/env/` — pick the per-user hook when Phase 1 lands.
 
 ---
 
 ## Phases
 
-_To be defined after the goals and open decisions are reviewed and agreed._
+High-level roadmap, ordered so each phase leaves the repo committable (rule 9).
+Only the *intent* of each phase is fixed here; the detailed sub-steps are written
+into the phase when we reach it, and the open decisions above are resolved at the
+phase that needs them (not up front).
+
+The ordering follows open decision 10: harden the primary target first (possibly
+still in bash), then introduce the Go core, then widen to other backends and OSes.
+
+### Phase 0 — Foundations & repo hygiene
+
+Lint and CI baseline with no behaviour change: a `make lint` target (shellcheck +
+a Markdown linter) aligned with CI, and an explicit least-privilege `permissions:`
+block in every workflow. Write the threat model down in two lines, since it drives
+the later design. → goals 16; open decisions 1, 11; rules 12, 14.
+
+Sub-phases (detailed steps written when we start each one):
+
+- **0.1 — Repo hygiene.** Rename `makefile` → `Makefile` (`git mv`). Add an
+  `.editorconfig` (UTF-8, LF line endings, final newline, trim trailing whitespace,
+  per-file-type indentation) and a `.gitattributes` (`* text=auto eol=lf`, explicit
+  handling for shell scripts and any binaries) to fix one formatting/line-ending
+  standard across the repo. `.gitignore` already covers scratch/step files.
+- **0.2 — Threat model.** The two lines are recorded in open decision 1 above
+  (documentation only).
+- **0.3 — `make lint` target (rule 12).** Wire into `make lint`: `lint-sh`
+  (`shellcheck` + `shfmt -d`), `lint-md` (`markdownlint-cli2`), `lint-make`
+  (`checkmake`), `lint-yaml` (`actionlint`). Rename `ssh-init-macos.sh` →
+  `ssh-init-macos.zsh` (zsh linting deferred to the macOS phase, so the shellcheck
+  by-name exclusion goes away). Decide here whether to add `editorconfig-checker`.
+- **0.4 — CI alignment & least-privilege (open decision 11, rule 14).** Add
+  `permissions: contents: read` to `linting.yml` and have CI run the same
+  `make lint`, replacing the per-tool actions (`action-shellcheck`,
+  `reviewdog/action-shfmt`) with that single target.
+
+Per-file-type lint decisions (rule 12):
+
+| File type | Decision |
+|---|---|
+| Shell — bash (`*.sh`) | `shellcheck` + `shfmt` |
+| Shell — macOS (`*.zsh`) | Rename `ssh-init-macos.sh` → `*.zsh`; linting deferred to the macOS phase (also removes the shellcheck by-name exclusion) |
+| Markdown (`*.md`) | `markdownlint-cli2` |
+| Makefile | `checkmake` |
+| YAML / GitHub workflows | `actionlint` |
+| `.editorconfig` / `.gitattributes` | Files added in 0.1; whether to enforce them with `editorconfig-checker` is TBD — decide in 0.3 |
+| Go | Deferred to Phase 3 when Go enters the repo (`gofmt`/`go vet`/`golangci-lint`) |
+
+### Phase 1 — Harden the primary target (still bash)
+
+Gentoo / OpenRC / KDE. Make the shipped behaviour match goals 1–10: fixed agent
+socket, never kill a healthy agent, silent on success, bounded retries with a
+give-up sentinel and an opt-out, clean exit with no keys, best-effort recovery,
+key-expiry semantics, and GUI detection that also works under Wayland and without
+a display. → goals 1–7, 9, 10; open decisions 2, 3, 4, 5, 6.
+
+### Phase 2 — Diagnostic tool
+
+The currently-missing diagnostic that reports who started the agent, why it isn't
+working, and which processes are involved — runnable under `sudo` for the full
+picture. → goal 8. (open: bash, or the first piece written in Go.)
+
+### Phase 3 — Go core
+
+Move the core logic out of bash into Go behind a thin shell entrypoint, minimizing
+duplication; define the `SecretBackend` interface; stand up unit tests plus
+container integration tests on Linux. → goals 14, 16; open decisions 7, 9.
+
+### Phase 4 — Configurability & pluggable secret backends
+
+Make the secret store pluggable (secret-service first, then 1Password) and the
+tool highly parametrizable via a config file. → goals 11, 15; open decision 7.
+
+### Phase 5 — Widen the OS targets
+
+macOS as a thin port (it already caches passphrases natively — avoid
+over-engineering), then Windows last as the most divergent target (service + named
+pipe, no socket). → goals 12, 13; open decision 8.
+
+### Phase 6 — Full test matrix
+
+Extend CI to macOS and Windows runners and complete the cross-platform test
+matrix. → goal 16; open decision 9.
