@@ -1,0 +1,160 @@
+# ssh-profile-config — Threat model
+
+Formal threat model for the secret and SSH-agent handling. It exists so the
+rewrite — and every later platform port and secret backend — has one explicit
+reference for what we defend, what we accept, and which concrete threat each
+design decision answers.
+
+It is **design-level and generic**: it describes the system, not any particular
+machine or deployment.
+
+## Summary (two lines)
+
+- **Protects** the key passphrase from logs, shell history, process arguments
+  (`ps` / `/proc/<pid>/cmdline`) and plaintext on disk: at rest it lives only in
+  the OS secret store, in transit only via a short-lived `keyctl` entry / stdin.
+- **Does not** defend against other processes of the same user or against root —
+  both can already use the key loaded in the agent, by design; hardening against
+  swap or coredumps is out of scope.
+
+## Method
+
+Threats are categorised with **STRIDE** (Spoofing, Tampering, Repudiation,
+Information disclosure, Denial of service, Elevation of privilege) and each is
+tagged with a **status**:
+
+| Status | Meaning |
+|---|---|
+| **Present** | Concretely applies to the current shell implementation. Marked *(mitigated)* if already handled, *(open)* if not yet. |
+| **Presumed** | Plausible given the approach; not confirmed against the code. |
+| **Future** | Relevant only to planned work (the Go core, the diagnostic tool, other OS ports, pluggable secret backends). |
+
+## Assets
+
+| ID | Asset | Why it matters |
+|---|---|---|
+| A1 | Key passphrase | Unlocks the private key; the most sensitive secret. |
+| A2 | Key loaded in the agent | The usable credential; equivalent to the private key for the agent's lifetime. |
+| A3 | Agent socket / endpoint | Gateway to A2 — anyone who can talk to it can authenticate. |
+| A4 | Secret-store entry | The passphrase at rest in the OS vault. |
+| A5 | Handoff channel | The short-lived `keyctl` entry / stdin used to pass A1 to `ssh-add`. |
+| A6 | Logs & state files | Must never contain A1; integrity of the give-up sentinel. |
+| A7 | Session agent variables | `SSH_AUTH_SOCK` / `SSH_AGENT_PID`; their correctness is the availability goal. |
+| A8 | Config files | Drive behaviour; tampering changes what we trust or execute. |
+
+## Trust boundaries & actors
+
+| Actor | Trust | Note |
+|---|---|---|
+| The user | Trusted | Owns everything. |
+| Other processes of the same user | **Trusted by design** | They must be able to use A2/A3; this is the explicit non-goal below. |
+| Other local (unprivileged) users | Untrusted | The primary adversary we defend against. |
+| root / kernel | Out of scope | Can already take A1–A8; we do not try to defend against it. |
+| Remote SSH peers | Out of scope | We only make the agent available; authentication is OpenSSH's job. |
+| OS secret store / session keyring | Trusted component | Gated by session unlock; we rely on it. |
+| External secret CLIs & OS keychains | Trusted components | `op`, macOS Keychain, Windows Credential Manager once wired in. |
+
+## Out of scope (accepted residual risk)
+
+By design we do **not** defend against:
+
+- other processes of the same user (they must be able to use the key);
+- root / kernel;
+- secrets reaching swap, coredumps, or memory forensics;
+- physical access / cold-boot attacks;
+- the integrity of OpenSSH, the OS secret store, or the desktop itself.
+
+These are listed so the model stays honest; every threat below is bounded by them.
+
+## Threats
+
+### Information disclosure (passphrase leakage — the core concern)
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| I1 | Passphrase passed in an **environment variable** → inherited by children, visible in `/proc/<pid>/environ`, easily logged. | Present (open) | Never put A1 in the environment; only key ids transit env. Hand A1 over out of band. |
+| I2 | Passphrase in a command **argument** → `/proc/<pid>/cmdline` is world-readable by default, so other local users can read it. | Present (open) | Feed A1 via stdin / `keyctl padd <<<…`; audit every invocation that touches A1. |
+| I3 | Passphrase written to a **log** file. | Present (mitigated) | Never log secrets; the capped log holds only non-sensitive events. |
+| I4 | Any byte on **stdout/stderr** on the success path → corrupts non-interactive `scp`/`rsync`/`git`-over-ssh and could echo a secret. | Present (open) | Success path emits nothing; all output goes to the log only. |
+| I5 | `keyctl` handoff entry readable by **same-user** processes. | Present (mitigated, residual) | Short timeout + unlink on read narrows the window; same-user exposure is accepted. |
+| I6 | Secret-store entry queryable by any same-user process once the session is unlocked. | Present (residual) | Accepted: same-user is out of scope; relies on the session lock. |
+| I7 | **World-readable** state/log files or socket directory → other local users read A3/A6. | Present (open) | Per-user `0700` dirs, `0600` files; socket in `$XDG_RUNTIME_DIR` (already `0700`). |
+| I8 | Passphrase reaching **swap or a coredump**. | Present (residual) | Out of scope; could later add `mlock` / no-core as defence in depth. |
+
+### Denial of service (the "SSH is ready" guarantee is itself a goal)
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| D1 | Script **kills a healthy agent** (misreads "reachable but empty", `ssh-add -l` exit 1, as dead). | Present (mitigated) | Treat exit 0 and 1 as healthy; restart only on no-socket / exit 2 / timeout. Invariant to keep. |
+| D2 | Creating `~/.ssh/agent/` makes OpenSSH 10.x **relocate the socket** to a random path → the session points at a dead one. | Present (mitigated) | Keep our files out of `~/.ssh`; pin a fixed socket in `$XDG_RUNTIME_DIR`. |
+| D3 | **Login-burst race**: simultaneous shells start competing agents. | Present (mitigated) | `flock` around agent start. |
+| D4 | **Retry storm**: every shell retries forever, spamming output. | Present (planned) | Bounded retries + persistent give-up sentinel + opt-out. |
+| D5 | Already-running session/GUI keeps a **stale** `SSH_AUTH_SOCK` we cannot rewrite. | Present (constraint) | Hard limit; mitigate with a fixed socket path and a last-resort dangling-socket symlink. |
+
+### Tampering
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| T1 | **Symlink / path attack** on the socket or recovery symlink in a shared dir → redirect or hijack the agent. | Presumed | Operate only inside a per-user `0700` dir; never `/tmp`; refuse to follow symlinks out of it. |
+| T2 | **TOCTOU** races on socket checks / file creation. | Presumed | Atomic create, `flock`, re-check after acquiring the lock. |
+| T3 | Hostile **`SSH_ASKPASS` / `PATH`** makes `ssh-add` run an attacker binary. | Presumed | Set an absolute `SSH_ASKPASS`, a clean env, and `SSH_ASKPASS_REQUIRE=force`. |
+| T4 | Poisoned **config file** changes trusted paths or commands. | Future | Validate config in the Go core; never execute arbitrary paths read from config. |
+
+### Spoofing
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| S1 | A rogue process listens at our **predictable endpoint path** and impersonates the agent. | Presumed | Endpoint lives in a `0700` per-user dir an attacker cannot write; verify reachability before use. |
+| S2 | A **fake askpass / vault prompt** phishes the user for the passphrase. | Presumed | Use only the real session keyring's prompt; never roll our own GUI prompt for A1. |
+
+### Elevation of privilege
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| E1 | The **diagnostic tool run with `sudo`** writes secrets as root, trusts user-controlled env, or follows attacker symlinks. | Future | Use elevation only for read-only inspection; never write A1; sanitise env; resolve paths safely. |
+| E2 | Our login script runs in an **unexpectedly privileged** context (e.g. a root login shell). | Presumed | Behave safely at any privilege; never assume or require root. |
+| E3 | System-wide install paths **writable by the user** → local privilege escalation. | Present (open) | System files owned by root and not user-writable; correct install modes and perms. |
+
+### Repudiation
+
+| ID | Threat & vector | Status | Mitigation / residual |
+|---|---|---|---|
+| R1 | Too little record of security-relevant actions (key load, give-up, agent restart) to diagnose abuse. | Present (mitigated) | Keep a capped, non-secret log of these events. |
+
+## Future / multi-platform notes
+
+When the logic moves into the **Go core** and to other platforms, re-evaluate the
+threats above against each new mechanism:
+
+- **macOS** — Keychain item ACLs (keep them narrow), `ssh-add --apple-use-keychain`,
+  and ownership of the launchd-managed agent. Reuses A1–A7 with the Keychain as A4.
+- **Windows** — the agent endpoint is a **named pipe**, not a socket: its security
+  descriptor must restrict access to the owning user (the A3 / S1 / T1 analogue).
+  Credential Manager / DPAPI as A4; mind service-vs-user context.
+- **Pluggable secret backends** — a 1Password-style CLI (`op`) adds: trusting the
+  binary found on `PATH` (S1), session-token handling, and never logging secret
+  output (I3). The backend interface is the natural home for these invariants.
+- **Go core** — dependency supply chain, parsing of untrusted config (T4), and safe
+  temp-file handling (T2).
+- **CI / containers** — mocked `keyctl` / D-Bus must not weaken the real backends,
+  and CI secrets must not leak into logs (I3).
+
+## Security invariants (derived)
+
+The rewrite must uphold these on every platform; each traces to the threats above:
+
+1. **No secret in env or argv.** A1 moves only via stdin / out-of-band handoff.
+   (I1, I2)
+2. **Silent, secret-free output & logs.** Nothing on stdout/stderr on success; no
+   secret is ever logged. (I3, I4)
+3. **Locked-down files.** State, logs and the socket live in per-user `0700` dirs
+   with `0600` files, in standard paths, never under `~/.ssh`. (I7, D2, T1)
+4. **Never kill a reachable agent.** Restart only a genuinely dead one, at a fixed
+   protected path. (D1, D2, S1)
+5. **Bounded, resettable retries with an opt-out.** (D4)
+6. **Least privilege.** Scripts are safe at any privilege and never require root;
+   only the diagnostic may elevate, and only to read. (E1, E2, E3)
+7. **Clean environment for child tools.** Absolute `SSH_ASKPASS`,
+   `SSH_ASKPASS_REQUIRE=force`, no reliance on an inherited `PATH`. (T3)
+8. **Restrict the agent endpoint to its owner** on every platform — socket
+   permissions or pipe security descriptor. (A3, S1, T1)
