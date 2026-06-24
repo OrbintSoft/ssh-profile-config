@@ -213,8 +213,10 @@ Sub-phases (detailed steps written when we start each one):
   per-file-type indentation) and a `.gitattributes` (`* text=auto eol=lf`, explicit
   handling for shell scripts) to fix one formatting/line-ending standard across the
   repo. `.gitignore` already covers scratch/step files.
-- **0.2 — Threat model.** The two lines are recorded in open decision 1 above
-  (documentation only).
+- **0.2 — Threat model. ✅ Done.** `docs/THREAT-MODEL.md` — a formal STRIDE model
+  (assets, trust boundaries, threats tagged present/presumed/future, and the derived
+  security invariants) to anchor the rewrite and the platform ports. The two-line
+  summary stays in open decision 1 above.
 - **0.3 — `make lint` target (rule 12).** Wire into `make lint`: `lint-sh`
   (`shellcheck` + `shfmt -d`), `lint-md` (`markdownlint-cli2`), `lint-make`
   (`checkmake`), `lint-yaml` (`actionlint`). Rename `ssh-init-macos.sh` →
