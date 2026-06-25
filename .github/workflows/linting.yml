@@ -1,14 +1,53 @@
 name: Linting
+
 on: [push]
+
+# The workflow only reads the checked-out tree to lint it; no write scopes.
+permissions:
+  contents: read
+
 jobs:
-  shellcheck:
-    name: Shellcheck
+  lint:
+    name: make lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - name: Check out the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # ssh-init-macos.zsh is zsh, which ShellCheck cannot parse (SC1071).
-          ignore_names: ssh-init-macos.zsh
-      - uses: reviewdog/action-shfmt@v1
+          go-version: stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: lts/*
+
+      - name: Install lint tools
+        env:
+          SHELLCHECK_VERSION: 0.11.0
+          SHFMT_VERSION: 3.13.1
+          CHECKMAKE_VERSION: 0.3.2
+          ACTIONLINT_VERSION: 1.7.12
+          EDITORCONFIG_CHECKER_VERSION: 3.7.0
+          MARKDOWNLINT_CLI2_VERSION: 0.22.1
+        run: |
+          set -euxo pipefail
+
+          # Pinned ShellCheck release tarball into /usr/local/bin
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJ
+          sudo install "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+
+          # Go-based tools into $(go env GOPATH)/bin
+          go install "mvdan.cc/sh/v3/cmd/shfmt@v${SHFMT_VERSION}"
+          go install "github.com/checkmake/checkmake/cmd/checkmake@v${CHECKMAKE_VERSION}"
+          go install "github.com/rhysd/actionlint/cmd/actionlint@v${ACTIONLINT_VERSION}"
+          go install "github.com/editorconfig-checker/editorconfig-checker/v3/cmd/editorconfig-checker@v${EDITORCONFIG_CHECKER_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+          # Node-based tool
+          npm install -g "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}"
+
+      - name: Run make lint
+        run: make lint

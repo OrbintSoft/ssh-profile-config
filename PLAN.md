@@ -239,10 +239,20 @@ Sub-phases (detailed steps written when we start each one):
     and URLs legitimately exceed 80), `MD029` (ol-prefix — goals are numbered
     continuously across sub-sections and referenced by number), `MD060`
     (table-column-style — pipe spacing left to the author).
-- **0.4 — CI alignment & least-privilege (open decision 11, rule 14).** Add
-  `permissions: contents: read` to `linting.yml` and have CI run the same
-  `make lint`, replacing the per-tool actions (`action-shellcheck`,
-  `reviewdog/action-shfmt`) with that single target.
+- **0.4 — CI alignment & least-privilege (open decision 11, rule 14). ✅ Done.**
+  `linting.yml` now declares top-level `permissions: contents: read` and runs a
+  single `lint` job that installs the six tools and invokes `make lint`,
+  replacing the per-tool actions (`ludeeus/action-shellcheck`,
+  `reviewdog/action-shfmt`) and dropping the `ignore_names` workaround. GitHub
+  Actions are pinned by full commit SHA with a `# vX.Y.Z` comment (minor+patch),
+  and a new `.github/dependabot.yml` enables the `github-actions` ecosystem to
+  keep them current. The lint tools are pinned to explicit versions in the
+  install step (shellcheck via release tarball; shfmt, checkmake, actionlint and
+  editorconfig-checker via `go install`; markdownlint-cli2 via `npm`); auto-bump
+  of those waits for the `go.mod`/`package.json` that arrive with the Go core
+  (Phase 3). `dependabot.yml` is non-workflow YAML, already covered by the 0.3
+  lint decision (editorconfig-checker for formatting; GitHub validates the schema
+  server-side), so it needs no new per-file-type decision.
 
 Per-file-type lint decisions (rule 12):
 
@@ -291,3 +301,17 @@ pipe, no socket). → goals 12, 13; open decision 8.
 
 Extend CI to macOS and Windows runners and complete the cross-platform test
 matrix. → goal 16; open decision 9.
+
+### Phase 7 — CI review & dependency hardening
+
+A final pass over the whole CI once it spans every platform and language. Audit
+each workflow for least-privilege `permissions:` (rule 14), de-duplicate the
+lint/test jobs, add dependency caching and sensible `concurrency`, and confirm
+`make lint` and the test suites stay the single entrypoints CI invokes. Settle
+dependency automation: choose Dependabot vs Renovate (open) and extend it to
+*every* ecosystem — `github-actions`, `gomod`, `npm` — so the lint-tool versions
+pinned by hand in Phase 0.4 become auto-managed once the `go.mod`/`package.json`
+manifests exist. Pin all third-party actions by full commit SHA with version
+comments, and pin tool/runtime versions (Go, Node, the linters) for reproducible
+builds. Re-evaluate per-file-type lint coverage (rule 12) against whatever file
+types the repo has grown by then. → goal 16; open decisions 9, 11; rules 12, 14.
