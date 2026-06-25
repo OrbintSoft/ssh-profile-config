@@ -37,14 +37,14 @@ log_message() {
 	local log_message
 	datetime=$(date '+%Y-%m-%d %H:%M:%S')
 	log_message="$datetime | [$level] $message"
-	echo "$log_message" >> "$log_file"
+	echo "$log_message" >>"$log_file"
 	if [ "$print_message" = true ]; then
 		echo "$log_message"
 	fi
-	line_count=$(wc -l < "$log_file")
+	line_count=$(wc -l <"$log_file")
 	if [ "$line_count" -gt "$max_log_lines" ]; then
 		file_cut=$(tail -n "$max_log_lines" "$log_file")
-		echo "$file_cut" > "$log_file"
+		echo "$file_cut" >"$log_file"
 	fi
 }
 
@@ -140,7 +140,7 @@ if [[ $- == *i* ]]; then
 				fi
 				# Add the key; ssh-ask-pass.sh reads the passphrase from keyctl.
 				SSH_TEMP_KEYCTL="$ssh_tmp_keyctl" SSH_PASS_UUID="$ssh_pass_uuid" SSH_ASKPASS="$ssh_askpass_script" \
-					setsid timeout 60 ssh-add "$keyfile" < /dev/null
+					setsid timeout 60 ssh-add "$keyfile" </dev/null
 				ssh_add_result=$?
 				# Store the passphrase only after a successful, first-time add.
 				if [ "$passphrase_stored" = false ] && [ "$ssh_add_result" -eq 0 ]; then
@@ -159,8 +159,8 @@ if [[ $- == *i* ]]; then
 				log_message "INFO" "✅ Added $keyname to agent" "true"
 				break
 			fi
-			log_message "ERROR" "❌ Failed to add $keyname (attempt $((attempts+1))/$max_attempts)" "true"
-			attempts=$((attempts+1))
+			log_message "ERROR" "❌ Failed to add $keyname (attempt $((attempts + 1))/$max_attempts)" "true"
+			attempts=$((attempts + 1))
 		done
 	done
 fi

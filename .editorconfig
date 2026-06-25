@@ -20,6 +20,9 @@ indent_style = tab
 [*.go]
 indent_style = tab
 
-# Markdown uses trailing spaces for hard line breaks.
+# Markdown uses trailing spaces for hard line breaks; its indentation is
+# content-driven (list-marker alignment, fenced code), so don't enforce it.
 [*.md]
 trim_trailing_whitespace = false
+indent_style = unset
+indent_size = unset
