@@ -217,11 +217,28 @@ Sub-phases (detailed steps written when we start each one):
   (assets, trust boundaries, threats tagged present/presumed/future, and the derived
   security invariants) to anchor the rewrite and the platform ports. The two-line
   summary stays in open decision 1 above.
-- **0.3 — `make lint` target (rule 12).** Wire into `make lint`: `lint-sh`
+- **0.3 — `make lint` target (rule 12). ✅ Done.** `make lint` runs `lint-sh`
   (`shellcheck` + `shfmt -d`), `lint-md` (`markdownlint-cli2`), `lint-make`
-  (`checkmake`), `lint-yaml` (`actionlint`). Rename `ssh-init-macos.sh` →
-  `ssh-init-macos.zsh` (zsh linting deferred to the macOS phase, so the shellcheck
-  by-name exclusion goes away). Decide here whether to add `editorconfig-checker`.
+  (`checkmake`), `lint-yaml` (`actionlint`) and `lint-editorconfig`
+  (`editorconfig-checker`). Renamed `ssh-init-macos.sh` → `ssh-init-macos.zsh`
+  (zsh linting deferred to the macOS phase). `editorconfig-checker` **adopted**
+  (whole tree; it honours `.gitignore`, so scratch files are skipped). Each tool
+  reads its own config file (rule 13): `.markdownlint-cli2.yaml` (disables
+  MD013/MD029/MD060 — see below — and excludes the throwaway
+  `docs/DESIGN-NOTES.md`), `checkmake.ini` (relaxes `minphony`/`maxbodylength`),
+  `.editorconfig-checker.json` (excludes `LICENSE` verbatim and the deferred
+  `*.zsh`). To satisfy the new linters with no behaviour change: shell scripts
+  reformatted with `shfmt -w`, `.vscode/settings.json` reindented to 2 spaces, and
+  `.editorconfig` marks Markdown indentation `unset` (content-driven). The lint
+  tools are external dev/CI tools (separate processes, not bundled or
+  distributed), so they carry no EUPL-1.2 obligations and don't obstruct
+  relicensing (rule 16). `linting.yml`'s `ignore_names` was updated to the `.zsh`
+  name (the shellcheck action scans `*.zsh`); the full CI rework (permissions
+  block + running `make lint`) stays in 0.4.
+  - Disabled Markdown rules: `MD013` (line-length — prose is hand-wrapped, tables
+    and URLs legitimately exceed 80), `MD029` (ol-prefix — goals are numbered
+    continuously across sub-sections and referenced by number), `MD060`
+    (table-column-style — pipe spacing left to the author).
 - **0.4 — CI alignment & least-privilege (open decision 11, rule 14).** Add
   `permissions: contents: read` to `linting.yml` and have CI run the same
   `make lint`, replacing the per-tool actions (`action-shellcheck`,
@@ -232,11 +249,11 @@ Per-file-type lint decisions (rule 12):
 | File type | Decision |
 |---|---|
 | Shell — bash (`*.sh`) | `shellcheck` + `shfmt` |
-| Shell — macOS (`*.zsh`) | Rename `ssh-init-macos.sh` → `*.zsh`; linting deferred to the macOS phase (also removes the shellcheck by-name exclusion) |
-| Markdown (`*.md`) | `markdownlint-cli2` |
-| Makefile | `checkmake` |
-| YAML / GitHub workflows | `actionlint` |
-| `.editorconfig` / `.gitattributes` | Files added in 0.1; whether to enforce them with `editorconfig-checker` is TBD — decide in 0.3 |
+| Shell — macOS (`*.zsh`) | Renamed in 0.3; linting deferred to the macOS phase (also removes the shellcheck by-name exclusion) |
+| Markdown (`*.md`) | `markdownlint-cli2` (config `.markdownlint-cli2.yaml`) |
+| Makefile | `checkmake` (config `checkmake.ini`) |
+| YAML / GitHub workflows | `actionlint`; non-workflow YAML/INI/JSON configs have no dedicated linter — `editorconfig-checker` enforces their charset/EOL/indent/final-newline |
+| All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim and the deferred `*.zsh`; `.gitignore` is honoured) |
 | Go | Deferred to Phase 3 when Go enters the repo (`gofmt`/`go vet`/`golangci-lint`) |
 
 ### Phase 1 — Harden the primary target (still bash)

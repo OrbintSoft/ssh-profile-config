@@ -49,5 +49,27 @@ print-paths:
 	@echo "ASK_PASS_RUNTIME_PATH: $(ASK_PASS_RUNTIME_PATH)"
 	@echo "SSH_INIT_INSTALL_PATH: $(SSH_INIT_INSTALL_PATH)"
 
-.PHONY: install uninstall print-paths
+# Linting. Requires: shellcheck, shfmt, markdownlint-cli2, checkmake, actionlint,
+# editorconfig-checker. Each tool reads its own config file where it has one.
+SH_SCRIPTS = $(wildcard *.sh)
+
+lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig
+
+lint-sh:
+	shellcheck $(SH_SCRIPTS)
+	shfmt -d $(SH_SCRIPTS)
+
+lint-md:
+	markdownlint-cli2
+
+lint-make:
+	checkmake --config=checkmake.ini Makefile
+
+lint-yaml:
+	actionlint
+
+lint-editorconfig:
+	editorconfig-checker
+
+.PHONY: install uninstall print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig
 .DEFAULT_GOAL := install

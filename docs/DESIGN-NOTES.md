@@ -24,7 +24,7 @@ Two scripts + a makefile:
 - `ssh-ask-pass-linux.sh` → installed to `$BINDIR/ssh-ask-pass.sh`; used as
   `SSH_ASKPASS` to feed the passphrase to `ssh-add` out of a short-lived
   `keyctl` entry.
-- `ssh-init-macos.sh` → macOS counterpart (uses the system keychain).
+- `ssh-init-macos.zsh` → macOS counterpart (uses the system keychain).
 
 ### Install convention on the target box
 ```

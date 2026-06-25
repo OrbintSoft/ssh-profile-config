@@ -8,7 +8,7 @@ log_message() {
 	local message="$2"
 	local datetime
 	datetime=$(date '+%Y-%m-%d %H:%M:%S')
-	echo "$datetime | [$level] $message" >> "$log_file"
+	echo "$datetime | [$level] $message" >>"$log_file"
 }
 
 log_message "INFO" "🔑 ssh-ask-pass.sh started for user $USER"
@@ -21,7 +21,7 @@ if [ -n "$SSH_TEMP_KEYCTL" ]; then
 		log_message "INFO" "🔑 Successfully retrieved passphrase for SSH_TEMP_KEYCTL: ***${SSH_TEMP_KEYCTL: -3} UUID: ${SSH_PASS_UUID: -3}"
 	fi
 	if [ -n "$passphrase" ]; then
-		if ! keyctl unlink "$SSH_TEMP_KEYCTL" > /dev/null; then
+		if ! keyctl unlink "$SSH_TEMP_KEYCTL" >/dev/null; then
 			log_message "ERROR" "❗ Failed to unlink SSH_TEMP_KEYCTL: ${SSH_TEMP_KEYCTL: -3} UUID: ${SSH_PASS_UUID: -3}"
 			exit 1
 		fi

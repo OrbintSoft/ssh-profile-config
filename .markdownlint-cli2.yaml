@@ -1,0 +1,18 @@
+# markdownlint-cli2 configuration.
+# Rules: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+globs:
+  - "**/*.md"
+# Honour .gitignore so scratch/working files (e.g. *-steps.md) are not linted.
+gitignore: true
+ignores:
+  # Throwaway triage doc; not worth conforming while it is short-lived.
+  - docs/DESIGN-NOTES.md
+config:
+  default: true
+  # Prose is hand-wrapped and tables/URLs legitimately exceed 80 columns.
+  MD013: false
+  # Ordered lists are numbered continuously across sub-sections and referenced
+  # by number (e.g. "goal 14"); markdownlint cannot model that intent.
+  MD029: false
+  # Table pipe spacing/alignment is left to the author; the tables render fine.
+  MD060: false
