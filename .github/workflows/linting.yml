@@ -9,6 +9,6 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         with:
-          # ssh-init-macos.sh is zsh, which ShellCheck cannot parse (SC1071).
-          ignore_names: ssh-init-macos.sh
+          # ssh-init-macos.zsh is zsh, which ShellCheck cannot parse (SC1071).
+          ignore_names: ssh-init-macos.zsh
       - uses: reviewdog/action-shfmt@v1

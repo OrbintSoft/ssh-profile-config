@@ -232,8 +232,9 @@ Sub-phases (detailed steps written when we start each one):
   `.editorconfig` marks Markdown indentation `unset` (content-driven). The lint
   tools are external dev/CI tools (separate processes, not bundled or
   distributed), so they carry no EUPL-1.2 obligations and don't obstruct
-  relicensing (rule 16). CI wiring stays in 0.4, so `linting.yml`'s `ignore_names`
-  is temporarily stale until then.
+  relicensing (rule 16). `linting.yml`'s `ignore_names` was updated to the `.zsh`
+  name (the shellcheck action scans `*.zsh`); the full CI rework (permissions
+  block + running `make lint`) stays in 0.4.
   - Disabled Markdown rules: `MD013` (line-length — prose is hand-wrapped, tables
     and URLs legitimately exceed 80), `MD029` (ol-prefix — goals are numbered
     continuously across sub-sections and referenced by number), `MD060`
