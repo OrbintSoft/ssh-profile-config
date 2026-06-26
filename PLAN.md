@@ -116,12 +116,13 @@ honoured) before or during the phases. Each notes the related goal.
    secret store do **not** protect against other processes of the same user — by
    design, since those processes must be able to use the key. Decide the target
    (other local users / root / swap & coredumps / logs) — it drives the design.
-   **Decided (Phase 0) — threat model (two lines):**
-   *Protects* the passphrase from logs, shell history, `argv`
-   (`ps` / `/proc/<pid>/cmdline`) and plaintext on disk — at rest it lives only in
-   the OS secret store, in transit only via a short-lived `keyctl` entry / stdin.
-   *Does not* defend against other same-user processes or root (both can already use
-   the key in the agent, by design); swap/coredump hardening is out of scope.
+   **Decided (Phase 0) — see `docs/THREAT-MODEL.md` (source of truth).** In two
+   lines: *protects* the passphrase from logs, shell history, `argv`
+   (`ps` / `/proc/<pid>/cmdline`) and plaintext on disk — at rest only in the OS
+   secret store, in transit only via a short-lived `keyctl` entry / stdin.
+   Same-user processes, root, swap/coredumps and physical access are **enumerated as
+   deferred decisions, not excluded by design**: each is settled per threat and
+   confirmed at a final security evaluation.
 
 2. **No passphrase in `argv` (goal 2).** Never pass the passphrase as a
    command-line argument (visible via `ps` / `/proc/<pid>/cmdline`). Feed it
@@ -186,6 +187,13 @@ honoured) before or during the phases. Each notes the related goal.
     `$XDG_RUNTIME_DIR`, nothing under `~/.ssh`. Open within: the per-user mode can't
     write `/etc/profile.d`, so its bootstrap hook moves to `~/.bashrc` /
     `~/.config/plasma-workspace/env/` — pick the per-user hook when Phase 1 lands.
+
+13. **Which keys to auto-load is configurable (goals 1, 2, 15).** The config file
+    selects the auto-load set in one of two modes: *all keys except a denylist*, or
+    *only an allowlist*. Default: all keys (convenience); a security-conscious user
+    narrows it to an allowlist to shrink the agent's blast radius — fewer keys in
+    the agent (A2) means fewer credentials exposed to same-user processes and to any
+    agent forwarding. Realised with the config file in the configurability phase.
 
 ---
 

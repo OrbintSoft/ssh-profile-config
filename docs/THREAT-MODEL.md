@@ -81,7 +81,7 @@ design".
 
 | Threat | Current treatment | Candidate response | Likely decision |
 |---|---|---|---|
-| Other processes of the same user | Trusted today (must be able to use the key) | Configurable key expiry (`ssh-add -t`, opt-out) and confirm-on-use (`ssh-add -c`) to bound the window | Deferred (to the rewrite) |
+| Other processes of the same user | Trusted today (must be able to use the key) | Configurable key expiry (`ssh-add -t`, opt-out), confirm-on-use (`ssh-add -c`), and loading only needed keys (allowlist mode) to bound the window | Deferred (to the rewrite) |
 | root / kernel | No defence | — (an attacker here already owns the session) | Deferred — probably Accept |
 | Secrets reaching swap, coredumps, memory forensics | No defence | `mlock`, disable core dumps around the handoff | Deferred |
 | Physical access / cold-boot | No defence | Rely on full-disk encryption / OS lock screen | Deferred — probably Accept |
