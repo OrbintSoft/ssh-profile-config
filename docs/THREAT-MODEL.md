@@ -81,11 +81,18 @@ design".
 
 | Threat | Current treatment | Candidate response | Likely decision |
 |---|---|---|---|
-| Other processes of the same user | Trusted today (must be able to use the key) | Key expiry (`ssh-add -t`), confirm-on-use (`ssh-add -c`) to bound the window | Deferred |
+| Other processes of the same user | Trusted today (must be able to use the key) | Configurable key expiry (`ssh-add -t`, opt-out) and confirm-on-use (`ssh-add -c`) to bound the window | Deferred (to the rewrite) |
 | root / kernel | No defence | — (an attacker here already owns the session) | Deferred — probably Accept |
 | Secrets reaching swap, coredumps, memory forensics | No defence | `mlock`, disable core dumps around the handoff | Deferred |
 | Physical access / cold-boot | No defence | Rely on full-disk encryption / OS lock screen | Deferred — probably Accept |
 | Integrity of OpenSSH, OS secret store, desktop | Trusted components | — (other systems' responsibility) | Accept (dependency) |
+
+Several of these are reduced by configuration **outside this software's control**:
+full-disk encryption (swap, cold-boot), the desktop session lock (a same-user
+process while the user is away), and — once the rewrite lands — choosing to set a
+key timeout. Our responsibility is to *enable* and default to safe behaviour and
+to document these expectations; we cannot enforce the user's environment. Overall
+security is a shared responsibility between the software and how it is deployed.
 
 ## Threats
 
@@ -101,6 +108,8 @@ design".
 | I6 | Secret-store entry queryable by any same-user process once the session is unlocked. | Present (residual) | Relies on the session lock. **Deferred**: same-user exposure tracked in the residual-risk register. |
 | I7 | **World-readable** state/log files or socket directory → other local users read A3/A6. | Present (open) | Per-user `0700` dirs, `0600` files; socket in `$XDG_RUNTIME_DIR` (already `0700`). |
 | I8 | Passphrase reaching **swap or a coredump**. | Present (residual) | **Deferred**: candidate defence-in-depth is `mlock` / disabling core dumps; tracked in the residual-risk register. |
+| I9 | **Agent forwarding** (`ssh -A` / `ForwardAgent`) exposes A2 to the remote host, which can use the loaded key for the connection's lifetime. | Present (open) | We do not enable forwarding; how to guard it (warn, confirm-on-use, scope `IdentityAgent`) is **Deferred** to the rewrite. |
+| I10 | The current shell askpass writes its session log **under `~/.ssh`**, against the keep-files-out-of-`~/.ssh` invariant. | Present (open) | **Mitigate** (decided): relocate the log to the per-user `0700` state dir in the rewrite. |
 
 ### Denial of service (the "SSH is ready" guarantee is itself a goal)
 
@@ -169,7 +178,7 @@ The rewrite must uphold these on every platform; each traces to the threats abov
 2. **Silent, secret-free output & logs.** Nothing on stdout/stderr on success; no
    secret is ever logged. (I3, I4)
 3. **Locked-down files.** State, logs and the socket live in per-user `0700` dirs
-   with `0600` files, in standard paths, never under `~/.ssh`. (I7, D2, T1)
+   with `0600` files, in standard paths, never under `~/.ssh`. (I7, I10, D2, T1)
 4. **Never kill a reachable agent.** Restart only a genuinely dead one, at a fixed
    protected path. (D1, D2, S1)
 5. **Bounded, resettable retries with an opt-out.** (D4)
