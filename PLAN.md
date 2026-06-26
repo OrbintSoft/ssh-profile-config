@@ -204,7 +204,9 @@ still in bash), then introduce the Go core, then widen to other backends and OSe
 Lint and CI baseline with no behaviour change: a `make lint` target (shellcheck +
 a Markdown linter) aligned with CI, and an explicit least-privilege `permissions:`
 block in every workflow. Write the threat model down in two lines, since it drives
-the later design. → goals 16; open decisions 1, 11; rules 12, 14.
+the later design. Settle contributor licensing (a CLA preserving the holder's
+freedom to relicense) while the project has no external contributors yet.
+→ goals 16; open decisions 1, 11; rules 12, 14, 16.
 
 Sub-phases (detailed steps written when we start each one):
 
@@ -253,6 +255,25 @@ Sub-phases (detailed steps written when we start each one):
   (Phase 3). `dependabot.yml` is non-workflow YAML, already covered by the 0.3
   lint decision (editorconfig-checker for formatting; GitHub validates the schema
   server-side), so it needs no new per-file-type decision.
+- **0.5 — Contributor licensing & CLA (rule 16). ✅ Done.** Added `CONTRIBUTING.md`,
+  `CLA.md` and `DCO.txt` so contributors **keep the copyright** in their work while
+  granting the copyright holder a **non-exclusive** licence to also distribute the
+  project under other licences (e.g. proprietary/OEM) alongside the permanent public
+  EUPL-1.2 release — no copyright assignment, no commit reverts. Mechanism: **DCO 1.1
+  sign-off** (`Signed-off-by`) **+ acceptance-by-action** of the CLA (no signing
+  bot); opening a PR with a sign-off certifies the DCO and accepts the CLA. The CLA
+  adapts the **Harmony HA-CLA-I** (individual; HA-CLA-E noted for entities). The
+  Harmony text is **CC BY 3.0 Unported**, adapted with attribution — a contract
+  document, not runtime code or a dependency, so it imposes no terms on the software
+  and does not obstruct relicensing (rule 16). `COPYRIGHT.md`, `AUTHORS.md` and
+  `README.md` were updated to match. The new files are Markdown / plain text, already
+  covered by `markdownlint-cli2` and `editorconfig-checker`, so no new per-file-type
+  linter (rule 12). Governing law follows EUPL Art. 15 (law of the EU Member State
+  where the holder is established, with Belgian law as the fallback), interpreted
+  consistently with Union law and the EUPL — not a hard-coded national choice. A
+  final IP-lawyer review is advisable before the first non-EUPL (OEM) sale. **Follow-up (rule 2):** propose a Rule 17 —
+  "every contribution requires a DCO sign-off and CLA acceptance before merge" — to
+  be formalised when the contribution flow is enforced.
 
 Per-file-type lint decisions (rule 12):
 
