@@ -13,9 +13,12 @@ machine or deployment.
 - **Protects** the key passphrase from logs, shell history, process arguments
   (`ps` / `/proc/<pid>/cmdline`) and plaintext on disk: at rest it lives only in
   the OS secret store, in transit only via a short-lived `keyctl` entry / stdin.
-- **Does not** defend against other processes of the same user or against root —
-  both can already use the key loaded in the agent, by design; hardening against
-  swap or coredumps is out of scope.
+- **Threats whose response is still open**: processes of the same user, root,
+  secrets reaching swap or coredumps, and physical access. Same-user processes can
+  already use the key loaded in the agent today, so we currently do not defend
+  against them — but these are enumerated below with their decision **Deferred**,
+  not excluded in advance. Which to mitigate and which to accept is settled per
+  threat and confirmed at a final security evaluation.
 
 ## Method
 
@@ -28,6 +31,21 @@ tagged with a **status**:
 | **Present** | Concretely applies to the current shell implementation. Marked *(mitigated)* if already handled, *(open)* if not yet. |
 | **Presumed** | Plausible given the approach; not confirmed against the code. |
 | **Future** | Relevant only to planned work (the Go core, the diagnostic tool, other OS ports, pluggable secret backends). |
+
+The status says whether a threat *applies*; it is separate from how we have
+decided to *respond*. The response is tagged with a **decision**:
+
+| Decision | Meaning |
+|---|---|
+| **Mitigate** | We defend against it; the mitigation is described. |
+| **Accept** | We consciously accept the residual risk, with a stated reason. |
+| **Deferred** | The threat is considered, but how to respond is not decided yet. |
+
+In this early phase we enumerate every threat we can think of and leave most
+responses **Deferred**: which ones are worth mitigating and which we accept is a
+design decision settled per threat as the work matures, and confirmed in a final
+security evaluation. A threat is never excluded "by design" before that decision
+is made.
 
 ## Assets
 
@@ -47,24 +65,27 @@ tagged with a **status**:
 | Actor | Trust | Note |
 |---|---|---|
 | The user | Trusted | Owns everything. |
-| Other processes of the same user | **Trusted by design** | They must be able to use A2/A3; this is the explicit non-goal below. |
+| Other processes of the same user | Currently trusted | They must be able to use A2/A3, so today we do not defend against them; broader hardening here is a **Deferred** decision (see the residual-risk register). |
 | Other local (unprivileged) users | Untrusted | The primary adversary we defend against. |
-| root / kernel | Out of scope | Can already take A1–A8; we do not try to defend against it. |
-| Remote SSH peers | Out of scope | We only make the agent available; authentication is OpenSSH's job. |
+| root / kernel | Decision deferred | Can already take A1–A8; defending is likely **Accept** (not worth it), but that is confirmed at the final review, not assumed here. |
+| Remote SSH peers | Other system's responsibility | We only make the agent available; authenticating peers is OpenSSH's job, not this component's. |
 | OS secret store / session keyring | Trusted component | Gated by session unlock; we rely on it. |
 | External secret CLIs & OS keychains | Trusted components | `op`, macOS Keychain, Windows Credential Manager once wired in. |
 
-## Out of scope (accepted residual risk)
+## Residual-risk register (decisions deferred)
 
-By design we do **not** defend against:
+These threats are identified and **kept in scope for consideration**; how we
+respond to each is not decided yet (**Deferred**), to be settled as the design
+matures and confirmed at the final security evaluation. None is excluded "by
+design".
 
-- other processes of the same user (they must be able to use the key);
-- root / kernel;
-- secrets reaching swap, coredumps, or memory forensics;
-- physical access / cold-boot attacks;
-- the integrity of OpenSSH, the OS secret store, or the desktop itself.
-
-These are listed so the model stays honest; every threat below is bounded by them.
+| Threat | Current treatment | Candidate response | Likely decision |
+|---|---|---|---|
+| Other processes of the same user | Trusted today (must be able to use the key) | Key expiry (`ssh-add -t`), confirm-on-use (`ssh-add -c`) to bound the window | Deferred |
+| root / kernel | No defence | — (an attacker here already owns the session) | Deferred — probably Accept |
+| Secrets reaching swap, coredumps, memory forensics | No defence | `mlock`, disable core dumps around the handoff | Deferred |
+| Physical access / cold-boot | No defence | Rely on full-disk encryption / OS lock screen | Deferred — probably Accept |
+| Integrity of OpenSSH, OS secret store, desktop | Trusted components | — (other systems' responsibility) | Accept (dependency) |
 
 ## Threats
 
@@ -76,10 +97,10 @@ These are listed so the model stays honest; every threat below is bounded by the
 | I2 | Passphrase in a command **argument** → `/proc/<pid>/cmdline` is world-readable by default, so other local users can read it. | Present (open) | Feed A1 via stdin / `keyctl padd <<<…`; audit every invocation that touches A1. |
 | I3 | Passphrase written to a **log** file. | Present (mitigated) | Never log secrets; the capped log holds only non-sensitive events. |
 | I4 | Any byte on **stdout/stderr** on the success path → corrupts non-interactive `scp`/`rsync`/`git`-over-ssh and could echo a secret. | Present (open) | Success path emits nothing; all output goes to the log only. |
-| I5 | `keyctl` handoff entry readable by **same-user** processes. | Present (mitigated, residual) | Short timeout + unlink on read narrows the window; same-user exposure is accepted. |
-| I6 | Secret-store entry queryable by any same-user process once the session is unlocked. | Present (residual) | Accepted: same-user is out of scope; relies on the session lock. |
+| I5 | `keyctl` handoff entry readable by **same-user** processes. | Present (mitigated, residual) | Short timeout + unlink on read narrows the window. **Deferred**: residual same-user exposure tracked in the residual-risk register. |
+| I6 | Secret-store entry queryable by any same-user process once the session is unlocked. | Present (residual) | Relies on the session lock. **Deferred**: same-user exposure tracked in the residual-risk register. |
 | I7 | **World-readable** state/log files or socket directory → other local users read A3/A6. | Present (open) | Per-user `0700` dirs, `0600` files; socket in `$XDG_RUNTIME_DIR` (already `0700`). |
-| I8 | Passphrase reaching **swap or a coredump**. | Present (residual) | Out of scope; could later add `mlock` / no-core as defence in depth. |
+| I8 | Passphrase reaching **swap or a coredump**. | Present (residual) | **Deferred**: candidate defence-in-depth is `mlock` / disabling core dumps; tracked in the residual-risk register. |
 
 ### Denial of service (the "SSH is ready" guarantee is itself a goal)
 
