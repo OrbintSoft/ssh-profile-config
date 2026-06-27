@@ -1,4 +1,4 @@
-# ssh-profile-config — Design notes & lessons learned
+# sshepherd — Design notes & lessons learned
 
 Living document. Captures how this thing actually behaves on the target box,
 the June 2026 breakage and its root cause, and the principles we want the

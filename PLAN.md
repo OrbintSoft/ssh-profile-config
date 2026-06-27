@@ -1,4 +1,4 @@
-# ssh-profile-config — PLAN
+# sshepherd — PLAN
 
 Roadmap for the rewrite. We fix the **goals** first; the **phases** come after the
 goals are reviewed and agreed. See `CLAUDE.md` for the project rules and
@@ -165,8 +165,14 @@ honoured) before or during the phases. Each notes the related goal.
    another reason for the mockable backend interface.
 
 10. **Phasing (rules 1, 9).** Harden the primary target first (Gentoo / OpenRC /
-    KDE, goals 1–10) — possibly still in cleaned-up bash — then introduce the Go
-    core, then widen to other backends and OSes. Each step must stay committable.
+    KDE), then the Go core, then widen to other backends and OSes; each step stays
+    committable. **Decided:** the "possibly still in bash" hedge is settled as a
+    **bash/Go split** — Phase 1 ships only the permanent shell plumbing in
+    cleaned-up bash (paths, install modes, silence, agent lifecycle) as a stable
+    baseline, and the branchy, stateful logic (retries / give-up, key-expiry,
+    Wayland detection, secret-handling) moves to the Go core in Phase 2, written
+    once rather than re-written from throwaway bash. The diagnostic tool follows
+    the core (Phase 3) so it reuses Go primitives.
 
 11. **CI least-privilege & lint coverage (rule 14, 12).** The existing
     `.github/workflows/linting.yml` has no explicit `permissions:` block (it runs
@@ -182,11 +188,11 @@ honoured) before or during the phases. Each notes the related goal.
     decisions are recorded under Phase 0.
 
 12. **Install modes & path layout (goals 17–19).** Realise the two install modes
-    and the XDG/FHS path layout in Phase 1 / packaging — config in `/etc` or
+    and the XDG/FHS path layout in Phase 1 (steps 1.1–1.2) — config in `/etc` or
     `$XDG_CONFIG_HOME`, state/logs in `$XDG_STATE_HOME`, agent socket in
     `$XDG_RUNTIME_DIR`, nothing under `~/.ssh`. Open within: the per-user mode can't
     write `/etc/profile.d`, so its bootstrap hook moves to `~/.bashrc` /
-    `~/.config/plasma-workspace/env/` — pick the per-user hook when Phase 1 lands.
+    `~/.config/plasma-workspace/env/` — pick the per-user hook in step 1.2.
 
 13. **Which keys to auto-load is configurable (goals 1, 2, 15).** The config file
     selects the auto-load set in one of two modes: *all keys except a denylist*, or
@@ -194,6 +200,17 @@ honoured) before or during the phases. Each notes the related goal.
     narrows it to an allowlist to shrink the agent's blast radius — fewer keys in
     the agent (A2) means fewer credentials exposed to same-user processes and to any
     agent forwarding. Realised with the config file in the configurability phase.
+
+14. **Project name (goal identity).** **Decided:** the project is named
+    **sshepherd** (`ssh` + *shepherd*: it tends the agent — lifecycle, health
+    checks, diagnostics and recovery — and loads and guards the keys, pulling each
+    passphrase from the OS secret store). It replaces the original
+    `ssh-profile-config`, which mislabelled the tool as an `~/.ssh/config` manager
+    (it manages neither SSH connection profiles nor `~/.ssh/config`) and described
+    the bootstrap mechanism (`profile.d`) rather than the purpose. The `<name>`
+    placeholder in the path layout (goal 19, open decision 12) resolves to
+    `sshepherd`. A short command alias `shep` is to be provided by the CLI when it
+    lands. The GitHub repository and the Gentoo package are renamed to match.
 
 ---
 
@@ -293,27 +310,67 @@ Per-file-type lint decisions (rule 12):
 | Makefile | `checkmake` (config `checkmake.ini`) |
 | YAML / GitHub workflows | `actionlint`; non-workflow YAML/INI/JSON configs have no dedicated linter — `editorconfig-checker` enforces their charset/EOL/indent/final-newline |
 | All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim and the deferred `*.zsh`; `.gitignore` is honoured) |
-| Go | Deferred to Phase 3 when Go enters the repo (`gofmt`/`go vet`/`golangci-lint`) |
+| Shell — bats tests (`*.bats`) | Deferred to Phase 1.5 when test files enter the repo |
+| Go | Deferred to Phase 2 when Go enters the repo (`gofmt`/`go vet`/`golangci-lint`) |
 
-### Phase 1 — Harden the primary target (still bash)
+### Phase 1 — Harden the primary target: shell plumbing (still bash)
 
-Gentoo / OpenRC / KDE. Make the shipped behaviour match goals 1–10: fixed agent
-socket, never kill a healthy agent, silent on success, bounded retries with a
-give-up sentinel and an opt-out, clean exit with no keys, best-effort recovery,
-key-expiry semantics, and GUI detection that also works under Wayland and without
-a display. → goals 1–7, 9, 10; open decisions 2, 3, 4, 5, 6.
+Gentoo / OpenRC / KDE. Scope narrowed by the bash/Go split (open decision 10):
+Phase 1 ships only the **permanent shell plumbing** in cleaned-up bash — a stable,
+committable baseline on the primary box — while the branchy, stateful logic moves
+to the Go core in Phase 2 (written once, not twice). Fixed agent socket and
+never-kill-a-healthy-agent (already shipped), clean exit with no keys, best-effort
+recovery, silent-on-success output discipline, and the standard path/install
+layout that gets our files out of `~/.ssh`. The login entrypoint is shaped so the
+Go core slots in behind it. → goals 3, 5, 6, 10, 17–19; open decisions 3, 4, 12.
 
-### Phase 2 — Diagnostic tool
+Sub-phases (detailed steps written when we start each one):
+
+- **1.1 — XDG path layout, out of `~/.ssh`.** Move our files to standard paths:
+  socket + lock to `$XDG_RUNTIME_DIR/<name>/` (0700, with a fallback for when it
+  is unset — possible under OpenRC/elogind), log/state to `$XDG_STATE_HOME/<name>/`
+  (0600 files), config under `$XDG_CONFIG_HOME/<name>/` or `/etc/<name>/`. The keys
+  stay in `~/.ssh` (OpenSSH's domain; we only read them). Align the askpass log to
+  the same state dir. → goal 19; open decision 12; threats I7, I10, D2; invariant 3.
+- **1.2 — Two install modes + bootstrap hook.** System-wide (`sudo`,
+  `/etc/profile.d`, `$BINDIR`) vs per-user (no root, everything under `$HOME`); the
+  same logic, only the paths and the bootstrap hook differ. Resolves the per-user
+  hook left open in open decision 12 (`~/.bashrc` vs
+  `~/.config/plasma-workspace/env/`). → goals 17, 18; open decision 12; threat E3.
+- **1.3 — Silent-on-success & shell safety, with the Go seam.** Zero stdout/stderr
+  on the success path; `set -u`-clean; degrade gracefully when `keyctl` / `flock`
+  are absent. Shape the entrypoint so it sets up the paths and socket and then
+  calls the (future) Go core — the binary does not exist yet, but the seam is
+  anticipated. → goal 3; open decision 3; threat I4; invariant 2.
+- **1.4 — Agent lifecycle & recovery.** Keep never-kill-a-healthy-agent (`ssh-add
+  -l` exit 0 and 1 both healthy), clean exit with no keys, opportunistic cleanup of
+  dangling sockets, and a last-resort dangling-socket symlink for already-open GUI
+  apps. → goals 5, 6; threats D1, D5.
+- **1.5 — Shell test harness (rule 12).** `bats` unit tests + container integration
+  tests covering the plumbing scenarios (the DESIGN-NOTES §7 checklist: re-login,
+  kill agent, empty wallet, reachable-but-empty). `bats` is a new file type —
+  evaluate a linter and record the decision (including a deliberate "no linter")
+  here. → goal 16.
+
+### Phase 2 — Go logic core
+
+Move the branchy, stateful logic out of bash into a small Go core behind the thin
+shell entrypoint, minimizing duplication: bounded retries with a persistent
+give-up sentinel and an opt-out, key-expiry semantics (`ssh-add -t`, silent re-add
+from the vault), GUI / secret-prompt detection that works under Wayland and
+headless, and secret-handling hardening (no passphrase in env or argv, absolute
+`SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force`, clean child env). Define the
+`SecretBackend` interface (it also makes the tests mockable) and stand up unit
+tests plus container integration tests on Linux. Go enters the repo here, so make
+the Go lint decision (`gofmt` / `go vet` / `golangci-lint`) and add `go.mod`
+(rule 12). → goals 1, 2, 4, 9, 14, 16; open decisions 2, 5, 6, 7, 9.
+
+### Phase 3 — Diagnostic tool
 
 The currently-missing diagnostic that reports who started the agent, why it isn't
 working, and which processes are involved — runnable under `sudo` for the full
-picture. → goal 8. (open: bash, or the first piece written in Go.)
-
-### Phase 3 — Go core
-
-Move the core logic out of bash into Go behind a thin shell entrypoint, minimizing
-duplication; define the `SecretBackend` interface; stand up unit tests plus
-container integration tests on Linux. → goals 14, 16; open decisions 7, 9.
+picture. Now lands after the Go core, so it is built in Go reusing the core's
+inspection primitives rather than as throwaway bash. → goal 8; threat E1.
 
 ### Phase 4 — Configurability & pluggable secret backends
 
