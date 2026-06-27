@@ -1,8 +1,8 @@
-# ssh-profile-config — Contributor License Agreement
+# sshepherd — Contributor License Agreement
 
 Contributor License Agreement ("Agreement"), v1.0.
 
-Thank you for your interest in ssh-profile-config (the "Project"). This Agreement
+Thank you for your interest in sshepherd (the "Project"). This Agreement
 sets out the terms under which You contribute to the Project and clarifies the
 intellectual-property rights granted with Your Contributions.
 

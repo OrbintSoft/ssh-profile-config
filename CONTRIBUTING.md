@@ -1,11 +1,11 @@
-# Contributing to ssh-profile-config
+# Contributing to sshepherd
 
 Thanks for your interest in contributing! This page explains the licensing terms
 every contribution must follow and how to send changes.
 
 ## Licensing and sign-off
 
-ssh-profile-config is, and will remain, made available to the public under the
+sshepherd is, and will remain, made available to the public under the
 **European Union Public Licence v. 1.2 (`EUPL-1.2`)**. Your contributions go in
 under that licence and are also covered by our
 [Contributor License Agreement](CLA.md).

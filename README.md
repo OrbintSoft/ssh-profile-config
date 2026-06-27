@@ -1,6 +1,8 @@
-# ssh-profile-config
+# sshepherd
 
-Easy scripts to auto-configure ssh agent and load keys and passwords
+Tends your SSH agent so every shell can use SSH without retyping the passphrase:
+it starts and watches the agent (lifecycle, health checks, diagnostics, recovery)
+and loads your keys, pulling each passphrase from the OS secret store.
 
 ## Contributing
 

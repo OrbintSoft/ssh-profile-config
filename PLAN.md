@@ -1,4 +1,4 @@
-# ssh-profile-config — PLAN
+# sshepherd — PLAN
 
 Roadmap for the rewrite. We fix the **goals** first; the **phases** come after the
 goals are reviewed and agreed. See `CLAUDE.md` for the project rules and
@@ -200,6 +200,17 @@ honoured) before or during the phases. Each notes the related goal.
     narrows it to an allowlist to shrink the agent's blast radius — fewer keys in
     the agent (A2) means fewer credentials exposed to same-user processes and to any
     agent forwarding. Realised with the config file in the configurability phase.
+
+14. **Project name (goal identity).** **Decided:** the project is named
+    **sshepherd** (`ssh` + *shepherd*: it tends the agent — lifecycle, health
+    checks, diagnostics and recovery — and loads and guards the keys, pulling each
+    passphrase from the OS secret store). It replaces the original
+    `ssh-profile-config`, which mislabelled the tool as an `~/.ssh/config` manager
+    (it manages neither SSH connection profiles nor `~/.ssh/config`) and described
+    the bootstrap mechanism (`profile.d`) rather than the purpose. The `<name>`
+    placeholder in the path layout (goal 19, open decision 12) resolves to
+    `sshepherd`. A short command alias `shep` is to be provided by the CLI when it
+    lands. The GitHub repository and the Gentoo package are renamed to match.
 
 ---
 
