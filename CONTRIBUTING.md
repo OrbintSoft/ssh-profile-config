@@ -43,6 +43,34 @@ otherwise on behalf of an employer or other legal entity, your sign-off also
 confirms you are authorised to grant the rights on its behalf (see the
 [CLA](CLA.md), Section 3) — no separate paperwork is required.
 
+To sign off every commit in this clone automatically, enable the bundled Git
+hook once:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It adds the `Signed-off-by` trailer when you forget `-s` — it never duplicates an
+existing one and leaves merge and squash messages untouched.
+
+### If the DCO check fails
+
+The check verifies **every commit** in the pull request, so it can fail on an
+earlier commit even when your latest one is signed. Add the sign-off to all the
+commits on your branch and update the pull request:
+
+```sh
+git rebase --signoff origin/master
+git push --force-with-lease
+```
+
+To fix only the most recent commit, amend it instead:
+
+```sh
+git commit --amend --signoff --no-edit
+git push --force-with-lease
+```
+
 ## How to send changes
 
 - Open a pull request against the `master` branch.

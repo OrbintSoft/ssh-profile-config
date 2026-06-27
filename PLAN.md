@@ -299,6 +299,21 @@ Sub-phases (detailed steps written when we start each one):
   final IP-lawyer review is advisable before the first non-EUPL (OEM) sale. **Follow-up (rule 2):** propose a Rule 17 —
   "every contribution requires a DCO sign-off and CLA acceptance before merge" — to
   be formalised when the contribution flow is enforced.
+- **0.6 — Contributor DX for the sign-off flow. ✅ Done.** Lower the friction a
+  contributor meets with the DCO/CLA sign-off requirement. `CONTRIBUTING.md` gains
+  a recovery recipe (`git rebase --signoff origin/master` + `git push
+  --force-with-lease`) for when the DCO check fails on an earlier commit, plus an
+  opt-in `prepare-commit-msg` hook under `.githooks/` (enabled with `git config
+  core.hooksPath .githooks`) that adds the trailer automatically via `git
+  interpret-trailers`, never duplicating one and skipping merge/squash messages. A
+  `.github/pull_request_template.md` checklist nudges sign-off, `make lint`, scope
+  and English before a PR is opened. The hook is an extensionless shell script, so
+  it is wired into `make lint`'s `lint-sh` (`SH_SCRIPTS` now also globs
+  `.githooks/*`) and given a tab-indent `.editorconfig` rule (`[.githooks/*]`) so
+  shellcheck, shfmt and editorconfig-checker all cover it consistently (rule 12). A
+  custom "comment on DCO failure" action was **rejected**: the DCO app already
+  links its own remediation, and the action would widen the workflow token to
+  `pull-requests: write` against the least-privilege default (rule 14).
 
 Per-file-type lint decisions (rule 12):
 

@@ -51,7 +51,7 @@ print-paths:
 
 # Linting. Requires: shellcheck, shfmt, markdownlint-cli2, checkmake, actionlint,
 # editorconfig-checker. Each tool reads its own config file where it has one.
-SH_SCRIPTS = $(wildcard *.sh)
+SH_SCRIPTS = $(wildcard *.sh) $(wildcard .githooks/*)
 
 lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig
 
