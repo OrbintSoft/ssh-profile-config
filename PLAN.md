@@ -193,6 +193,22 @@ honoured) before or during the phases. Each notes the related goal.
     `$XDG_RUNTIME_DIR`, nothing under `~/.ssh`. Open within: the per-user mode can't
     write `/etc/profile.d`, so its bootstrap hook moves to `~/.bashrc` /
     `~/.config/plasma-workspace/env/` — pick the per-user hook in step 1.2.
+    **Decided (step 1.1):** config **and** the session log live together under
+    `${XDG_CONFIG_HOME:-~/.config}/sshepherd` (one discoverable tree, not the
+    `$XDG_STATE_HOME` split sketched above). The agent socket goes in the per-user
+    tmpfs, resolved independently of the desktop/display server:
+    `$XDG_RUNTIME_DIR/sshepherd` → `/run/user/$UID/sshepherd` (probed, owned by us)
+    → `${XDG_CACHE_HOME:-~/.cache}/sshepherd` when no logind exists. An
+    unpredictable per-login token from the `@u` user keyring is inserted as a path
+    component (`<runtime_dir>/<token>/agent.sock`) so the path is not reproducible
+    across logins/reboots — defense-in-depth above the ownership+`0700` boundary;
+    it degrades to the plain runtime dir when `keyctl` is absent. Deferred to the
+    Go core (which owns path computation behind the entrypoint seam): keyring via
+    syscalls (no `keyctl` binary), a `/dev/shm/sshepherd/$UID/<token>/` tmpfs
+    fallback with parent-validation (`lstat`/owner/no-symlink) + a `tmpfiles.d`
+    entry for the system install, optional `boot_id` rotation for the `~/.cache`
+    fallback, and optional per-login agent isolation as a config flag. The
+    per-user bootstrap hook stays open for step 1.2.
 
 13. **Which keys to auto-load is configurable (goals 1, 2, 15).** The config file
     selects the auto-load set in one of two modes: *all keys except a denylist*, or
