@@ -1,7 +1,10 @@
 #!/bin/bash
 
-key_dir="$HOME/.ssh"
-log_file="$key_dir/sessions.log"
+app_name="sshepherd"
+# Independently computed to mirror nn-ssh-init's config dir, so both write to the
+# same owner-only log.
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$app_name"
+log_file="$config_dir/sessions.log"
 
 log_message() {
 	local level="$1"
