@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Append the committer's Signed-off-by trailer when it is missing, so every
+# commit certifies the Developer Certificate of Origin and accepts the CLA
+# (see CONTRIBUTING.md). It never duplicates an existing sign-off and leaves
+# merge and squash messages untouched.
+#
+# Enable it for this clone with:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+msg_file="$1"
+commit_source="${2:-}"
+
+if [ "$commit_source" = "merge" ] || [ "$commit_source" = "squash" ]; then
+	exit 0
+fi
+
+signoff="Signed-off-by: $(git config user.name) <$(git config user.email)>"
+git interpret-trailers --if-exists doNothing --trailer "$signoff" --in-place "$msg_file"

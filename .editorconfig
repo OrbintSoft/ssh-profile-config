@@ -13,6 +13,10 @@ indent_size = 2
 [*.{sh,zsh}]
 indent_style = tab
 
+# Git hooks are extensionless shell scripts; keep them tab-indented too.
+[.githooks/*]
+indent_style = tab
+
 [Makefile]
 indent_style = tab
 
