@@ -18,6 +18,18 @@ a *non-exclusive* licence under the [Contributor License Agreement](CLA.md) — 
 is no copyright assignment. See [CONTRIBUTING.md](CONTRIBUTING.md) for how this is
 accepted (a `Signed-off-by` trailer certifying the [DCO](DCO.txt) and the CLA).
 
+## Third-party components
+
+Compiled into the distributed binary:
+
+- **Go standard library** — BSD-3-Clause.
+- **golang.org/x/sys** — BSD-3-Clause (Linux kernel keyring and syscall access).
+
+Both are BSD-3-Clause: compatible with the EUPL 1.2 and with offering the project
+under additional licences, so they do not obstruct relicensing. Build- and
+CI-only tools (the Go toolchain and the linters) run as separate processes, are
+neither bundled nor distributed, and impose no terms on the software.
+
 ## Relicensing
 
 The project's public release is, and will remain, under the EUPL 1.2. In addition,

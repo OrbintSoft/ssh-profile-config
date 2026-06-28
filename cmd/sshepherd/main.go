@@ -57,7 +57,7 @@ func run(stdout, stderr io.Writer, args []string) int {
 // token (a socket-path component) is added in a following sub-step.
 func shellInit(stdout, stderr io.Writer) int {
 	env := paths.FromOS()
-	layout := paths.Resolve(env, paths.ProbeDir)
+	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
 	if err := paths.Ensure(layout); err != nil {
 		_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
 		return 1

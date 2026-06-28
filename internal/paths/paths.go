@@ -54,6 +54,19 @@ func Resolve(env Env, probe func(path string, requireOwner bool) bool) Layout {
 	}
 }
 
+// WithSocketToken inserts a per-login token as a socket-path component, so the
+// socket path is not reproducible across logins or reboots. An empty token (no
+// keyring available) leaves the layout unchanged — a tokenless degradation.
+func (l Layout) WithSocketToken(token string) Layout {
+	if token == "" {
+		return l
+	}
+	l.SocketDir = filepath.Join(l.RuntimeDir, token)
+	l.AgentSock = filepath.Join(l.SocketDir, "agent.sock")
+	l.AgentLock = filepath.Join(l.SocketDir, ".start.lock")
+	return l
+}
+
 // resolveRuntimeDir picks the per-user tmpfs base, independent of the desktop or
 // display server: XDG_RUNTIME_DIR, then its canonical /run/user/$UID (only if we
 // own it), then a private dir under $HOME when no logind tmpfs exists.

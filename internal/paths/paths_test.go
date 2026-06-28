@@ -60,6 +60,31 @@ func TestResolveRuntimeDir(t *testing.T) {
 	}
 }
 
+func TestWithSocketToken(t *testing.T) {
+	base := Resolve(Env{Home: "/h", RuntimeDir: "/run/user/1", UID: 1},
+		func(p string, _ bool) bool { return p == "/run/user/1" })
+	if base.SocketDir != "/run/user/1/sshepherd" {
+		t.Fatalf("base SocketDir = %q", base.SocketDir)
+	}
+
+	got := base.WithSocketToken("deadbeef")
+	if want := "/run/user/1/sshepherd/deadbeef"; got.SocketDir != want {
+		t.Errorf("SocketDir = %q, want %q", got.SocketDir, want)
+	}
+	if want := "/run/user/1/sshepherd/deadbeef/agent.sock"; got.AgentSock != want {
+		t.Errorf("AgentSock = %q, want %q", got.AgentSock, want)
+	}
+	if want := "/run/user/1/sshepherd/deadbeef/.start.lock"; got.AgentLock != want {
+		t.Errorf("AgentLock = %q, want %q", got.AgentLock, want)
+	}
+	if got.RuntimeDir != base.RuntimeDir {
+		t.Errorf("RuntimeDir changed to %q", got.RuntimeDir)
+	}
+	if base.WithSocketToken("") != base {
+		t.Error("empty token should leave the layout unchanged")
+	}
+}
+
 func TestResolveConfigDir(t *testing.T) {
 	noProbe := func(string, bool) bool { return false }
 
