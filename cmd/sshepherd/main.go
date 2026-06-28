@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/OrbintSoft/sshepherd/internal/paths"
+	"github.com/OrbintSoft/sshepherd/internal/sessionlog"
 )
 
 const usage = `sshepherd — SSH agent and key shepherd
@@ -59,6 +60,8 @@ func shellInit(stdout, stderr io.Writer) int {
 	env := paths.FromOS()
 	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
 	if err := paths.Ensure(layout); err != nil {
+		// Best-effort: the log dir may be the very thing we failed to create.
+		_ = sessionlog.New(layout.LogFile).Log("ERROR", fmt.Sprintf("shell-init: %v", err))
 		_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
 		return 1
 	}
