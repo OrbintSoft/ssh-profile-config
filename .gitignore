@@ -3,3 +3,6 @@
 *-steps.md
 *.scratch
 scratch/
+
+# Go build output
+/bin/

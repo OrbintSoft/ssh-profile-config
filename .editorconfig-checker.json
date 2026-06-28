@@ -1,6 +1,7 @@
 {
   "Exclude": [
     "^LICENSE$",
-    "\\.zsh$"
+    "\\.zsh$",
+    "\\.go$"
   ]
 }

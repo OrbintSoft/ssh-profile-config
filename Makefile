@@ -6,6 +6,10 @@ DESTDIR ?=
 ETC_PROFILE_D ?= /etc/profile.d/
 NN ?= 001
 
+GO ?= go
+GO_MAIN = ./cmd/sshepherd
+GO_BIN = bin/sshepherd
+
 ifeq ($(UNAME),Linux)
 SSH_ASK_INSTALL_SCRIPT = ssh-ask-pass-linux.sh
 SSH_INIT_INSTALL_SCRIPT = nn-ssh-init-linux.sh
@@ -41,6 +45,9 @@ install uninstall:
 	@exit 1
 endif
 
+build:
+	$(GO) build -o $(GO_BIN) $(GO_MAIN)
+
 print-paths:
 	@echo "PREFIX: $(PREFIX)"
 	@echo "BINDIR: $(BINDIR)"
@@ -53,7 +60,7 @@ print-paths:
 # editorconfig-checker. Each tool reads its own config file where it has one.
 SH_SCRIPTS = $(wildcard *.sh) $(wildcard .githooks/*)
 
-lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig
+lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
 
 lint-sh:
 	shellcheck $(SH_SCRIPTS)
@@ -71,5 +78,10 @@ lint-yaml:
 lint-editorconfig:
 	editorconfig-checker
 
-.PHONY: install uninstall print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig
+lint-go:
+	@gofmt_out=$$(gofmt -l .); [ -z "$$gofmt_out" ] || { echo "gofmt needed on:"; echo "$$gofmt_out"; exit 1; }
+	$(GO) vet ./...
+	golangci-lint run
+
+.PHONY: install uninstall build print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
 .DEFAULT_GOAL := install
