@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+
+	"github.com/OrbintSoft/sshepherd/internal/paths"
 )
 
 const usage = `sshepherd — SSH agent and key shepherd
@@ -43,9 +46,40 @@ func run(stdout, stderr io.Writer, args []string) int {
 	}
 }
 
-// shellInit computes the runtime paths and prints them as shell assignments for
-// the login entrypoint to eval. The path, keyring-token and log logic lands in
-// the following sub-steps; for now it is a stub that emits nothing.
-func shellInit(_, _ io.Writer) int {
+// shellInit resolves and creates the per-user runtime layout, then prints it as
+// shell assignments for the login entrypoint to eval:
+//
+//	agent_sock='…'
+//	agent_lock='…'
+//	log_file='…'
+//
+// Only these assignments go to stdout; diagnostics go to stderr. The keyring
+// token (a socket-path component) is added in a following sub-step.
+func shellInit(stdout, stderr io.Writer) int {
+	env := paths.FromOS()
+	layout := paths.Resolve(env, paths.ProbeDir)
+	if err := paths.Ensure(layout); err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
+		return 1
+	}
+	paths.CleanupLegacyAgentDir(env.Home)
+
+	assignments := []struct{ name, value string }{
+		{"agent_sock", layout.AgentSock},
+		{"agent_lock", layout.AgentLock},
+		{"log_file", layout.LogFile},
+	}
+	for _, a := range assignments {
+		if _, err := fmt.Fprintf(stdout, "%s=%s\n", a.name, shellSingleQuote(a.value)); err != nil {
+			_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
+			return 1
+		}
+	}
 	return 0
+}
+
+// shellSingleQuote wraps s in single quotes safe for POSIX shell eval, so paths
+// containing spaces or metacharacters survive intact.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
