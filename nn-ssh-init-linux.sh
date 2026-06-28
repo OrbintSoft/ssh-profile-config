@@ -16,32 +16,12 @@
 #   * decides "is this key already loaded?" by fingerprint, so no growing
 #     state file is needed.
 
-app_name="sshepherd"
 key_dir="$HOME/.ssh"
 key_prefix="SSH-Key"
+sshepherd_bin="/usr/local/bin/sshepherd"
 ssh_askpass_script="/usr/local/bin/ssh-ask-pass.sh"
 max_log_lines=100
 max_attempts=3
-token_key="$app_name-socket-token"
-
-# Config and log live under the standard config dir (default ~/.config/<app>),
-# never under ~/.ssh: that is OpenSSH's domain, and creating ~/.ssh/agent/ is
-# precisely what makes OpenSSH 10.x relocate its socket to a random path.
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$app_name"
-log_file="$config_dir/sessions.log"
-
-# The agent socket lives in the per-user tmpfs that logind/elogind provides --
-# found via XDG_RUNTIME_DIR or its canonical /run/user/$UID, independent of the
-# desktop or display server. With no logind (e.g. bare OpenRC) fall back to a
-# private dir under $HOME. All candidates are per-user 0700.
-uid=$(id -u)
-if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
-	runtime_dir="$XDG_RUNTIME_DIR/$app_name"
-elif [ -d "/run/user/$uid" ] && [ -O "/run/user/$uid" ]; then
-	runtime_dir="/run/user/$uid/$app_name"
-else
-	runtime_dir="${XDG_CACHE_HOME:-$HOME/.cache}/$app_name"
-fi
 
 log_message() {
 	local level="$1"
@@ -74,61 +54,18 @@ ssh_agent_reachable() {
 	[ "$rc" -eq 0 ] || [ "$rc" -eq 1 ]
 }
 
-# Read the shared socket-path token from the user keyring (fails if absent).
-read_socket_token() {
-	local serial
-	serial=$(keyctl search @u user "$token_key" 2>/dev/null) || return 1
-	keyctl print "$serial" 2>/dev/null
-}
-
-mkdir -p "$config_dir" "$runtime_dir"
-chmod 700 "$config_dir" "$runtime_dir"
-# Owner-only: the log records key names and agent activity.
-touch "$log_file"
-chmod 600 "$log_file"
-
-# Unpredictable component of the socket path, so it is not reproducible across
-# logins/reboots. Kept in the user keyring (@u) so every shell of this login
-# shares it; created race-free under a lock. Degrades to the plain runtime dir
-# when keyctl is unavailable.
-socket_token=""
-if command -v keyctl >/dev/null 2>&1; then
-	socket_token=$(read_socket_token) || socket_token=""
-	if [ -z "$socket_token" ]; then
-		token_lock="$runtime_dir/.token.lock"
-		if command -v flock >/dev/null 2>&1; then
-			exec {token_lock_fd}>"$token_lock"
-			flock -w 5 "$token_lock_fd" 2>/dev/null
-		fi
-		# Re-check inside the lock: another shell may have just created it.
-		socket_token=$(read_socket_token) || socket_token=""
-		if [ -z "$socket_token" ]; then
-			new_token=$(od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')
-			# padd reads the value from stdin, keeping it out of argv/ps.
-			if printf '%s' "$new_token" | keyctl padd user "$token_key" @u >/dev/null 2>&1; then
-				socket_token="$new_token"
-			fi
-		fi
-		if [ -n "${token_lock_fd:-}" ]; then
-			exec {token_lock_fd}>&-
-			unset token_lock_fd
-		fi
-	fi
+# Resolve the runtime paths, create the per-user dirs, manage the per-login
+# socket token, and retire the legacy ~/.ssh/agent location. The Go core prints
+# the shell assignments below for us to eval; declare them first so an absent or
+# failing binary leaves them empty rather than unset.
+agent_sock=""
+agent_lock=""
+log_file=""
+if [ -x "$sshepherd_bin" ]; then
+	eval "$("$sshepherd_bin" shell-init)"
 fi
-
-socket_dir="$runtime_dir${socket_token:+/$socket_token}"
-mkdir -p "$socket_dir"
-chmod 700 "$socket_dir"
-agent_sock="$socket_dir/agent.sock"
-agent_lock="$socket_dir/.start.lock"
-
-# Retire our previous location under ~/.ssh: the agent/ dir there is what makes
-# OpenSSH 10.x relocate its socket. Safe -- we remove only our own socket/lock,
-# and rmdir fails harmlessly if anything else remains in the dir.
-if [ -d "$key_dir/agent" ]; then
-	rm -f "$key_dir/agent/ssh-agent.sock" "$key_dir/agent/.start.lock"
-	rmdir "$key_dir/agent" 2>/dev/null || true
-fi
+# Without the resolved paths there is nothing we can safely do.
+[ -n "$agent_sock" ] && [ -n "$log_file" ] || return
 
 # Always pin this shell -- and, at login, the whole session -- to the fixed path.
 export SSH_AUTH_SOCK="$agent_sock"

@@ -172,7 +172,10 @@ honoured) before or during the phases. Each notes the related goal.
     baseline, and the branchy, stateful logic (retries / give-up, key-expiry,
     Wayland detection, secret-handling) moves to the Go core in Phase 2, written
     once rather than re-written from throwaway bash. The diagnostic tool follows
-    the core (Phase 3) so it reuses Go primitives.
+    the core (Phase 3) so it reuses Go primitives. **Brought forward:** rather than
+    a wholesale Phase 2, the Go core is grown incrementally (strangler) starting
+    with the path/token/dir/log slice, so no more throwaway bash accumulates — see
+    the Phase 2 note for the slice breakdown.
 
 11. **CI least-privilege & lint coverage (rule 14, 12).** The existing
     `.github/workflows/linting.yml` has no explicit `permissions:` block (it runs
@@ -340,9 +343,9 @@ Per-file-type lint decisions (rule 12):
 | Markdown (`*.md`) | `markdownlint-cli2` (config `.markdownlint-cli2.yaml`) |
 | Makefile | `checkmake` (config `checkmake.ini`) |
 | YAML / GitHub workflows | `actionlint`; non-workflow YAML/INI/JSON configs have no dedicated linter — `editorconfig-checker` enforces their charset/EOL/indent/final-newline |
-| All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim and the deferred `*.zsh`; `.gitignore` is honoured) |
+| All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim, the deferred `*.zsh`, and `*.go` — gofmt owns Go formatting and legitimately allows spaces inside string literals; `.gitignore` is honoured) |
 | Shell — bats tests (`*.bats`) | Deferred to Phase 1.5 when test files enter the repo |
-| Go | Deferred to Phase 2 when Go enters the repo (`gofmt`/`go vet`/`golangci-lint`) |
+| Go (`*.go`) | `gofmt -l` + `go vet ./...` + `golangci-lint` (config `.golangci.yml`, standard set); compiled by `make build`. Wired into `make lint` as `lint-go` and installed in CI (pinned). License (rule 16): the Go toolchain, its standard library (BSD-3-Clause) and `golangci-lint` are EUPL-1.2 compatible and don't obstruct relicensing — build/dev tools follow the 0.3 precedent (no bundled obligations); the third-party module list (`golang.org/x/sys`, BSD-3-Clause) is recorded in `COPYRIGHT.md`. |
 
 ### Phase 1 — Harden the primary target: shell plumbing (still bash)
 
@@ -370,13 +373,15 @@ Sub-phases (detailed steps written when we start each one):
   `~/.config/plasma-workspace/env/`). → goals 17, 18; open decision 12; threat E3.
 - **1.3 — Silent-on-success & shell safety, with the Go seam.** Zero stdout/stderr
   on the success path; `set -u`-clean; degrade gracefully when `keyctl` / `flock`
-  are absent. Shape the entrypoint so it sets up the paths and socket and then
-  calls the (future) Go core — the binary does not exist yet, but the seam is
-  anticipated. → goal 3; open decision 3; threat I4; invariant 2.
+  are absent. The seam is now real: the entrypoint evals the Go core
+  (`sshepherd shell-init`, Phase 2 slice 1), so the remaining 1.3 work is the
+  silence / `set -u` hardening layered on top. → goal 3; open decision 3; threat
+  I4; invariant 2.
 - **1.4 — Agent lifecycle & recovery.** Keep never-kill-a-healthy-agent (`ssh-add
   -l` exit 0 and 1 both healthy), clean exit with no keys, opportunistic cleanup of
   dangling sockets, and a last-resort dangling-socket symlink for already-open GUI
-  apps. → goals 5, 6; threats D1, D5.
+  apps. **Now Go slice 2** (see the Phase 2 note): this lifecycle logic moves into
+  the Go core rather than staying in bash. → goals 5, 6; threats D1, D5.
 - **1.5 — Shell test harness (rule 12).** `bats` unit tests + container integration
   tests covering the plumbing scenarios (the DESIGN-NOTES §7 checklist: re-login,
   kill agent, empty wallet, reachable-but-empty). `bats` is a new file type —
@@ -392,9 +397,31 @@ from the vault), GUI / secret-prompt detection that works under Wayland and
 headless, and secret-handling hardening (no passphrase in env or argv, absolute
 `SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force`, clean child env). Define the
 `SecretBackend` interface (it also makes the tests mockable) and stand up unit
-tests plus container integration tests on Linux. Go enters the repo here, so make
-the Go lint decision (`gofmt` / `go vet` / `golangci-lint`) and add `go.mod`
-(rule 12). → goals 1, 2, 4, 9, 14, 16; open decisions 2, 5, 6, 7, 9.
+tests plus container integration tests on Linux. Go entered the repo early (slice
+1 below), where the Go lint decision (`gofmt` / `go vet` / `golangci-lint`,
+`make build`) and `go.mod` were already made (rule 12). → goals 1, 2, 4, 9, 14,
+16; open decisions 2, 5, 6, 7, 9.
+
+**Brought forward — Go core grown incrementally (strangler).** Instead of one
+wholesale rewrite, the Go core is added slice by slice behind the entrypoint seam
+while the bash shrinks toward a thin `eval "$(sshepherd shell-init)"`. Each slice
+is committable and the bash keeps working until each piece moves.
+
+- **Slice 1 — path / token / dir / log core. ✅ Done.** `cmd/sshepherd` +
+  `internal/paths` + `internal/sessionlog`: path resolution (config dir; runtime
+  dir XDG_RUNTIME_DIR → /run/user/$UID owned → ~/.cache), the per-login `@u`
+  keyring token via the `keyctl(2)` syscall (`golang.org/x/sys`, no `keyctl`
+  binary), 0700/0600 dir+log creation with a symlinked-leaf guard, legacy
+  `~/.ssh/agent` cleanup, and a bounded session log. `shell-init` prints
+  `agent_sock`/`agent_lock`/`log_file`; the entrypoint evals them. The Go lint and
+  `golang.org/x/sys` (BSD-3-Clause) licence decisions are recorded (rules 12, 16).
+- **Slice 2 — agent lifecycle** (the Phase 1.4 work, in Go): reachability, start
+  on the fixed socket, never-kill-a-healthy-agent, dangling-socket cleanup.
+- **Slice 3 — key loading + `askpass`**: key enumeration / fingerprint dedup,
+  secret lookup and prompt, and an `sshepherd askpass` subcommand that retires
+  `ssh-ask-pass-linux.sh`.
+- **Slice 4 — retries / give-up + key-expiry**: the original Phase 2 stateful
+  logic; by here the bash is just the thin hook.
 
 ### Phase 3 — Diagnostic tool
 

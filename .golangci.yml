@@ -1,0 +1,5 @@
+version: "2"
+
+# Standard set: errcheck, govet, ineffassign, staticcheck, unused.
+linters:
+  default: standard

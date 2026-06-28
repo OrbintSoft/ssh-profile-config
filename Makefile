@@ -6,6 +6,10 @@ DESTDIR ?=
 ETC_PROFILE_D ?= /etc/profile.d/
 NN ?= 001
 
+GO ?= go
+GO_MAIN = ./cmd/sshepherd
+GO_BIN = bin/sshepherd
+
 ifeq ($(UNAME),Linux)
 SSH_ASK_INSTALL_SCRIPT = ssh-ask-pass-linux.sh
 SSH_INIT_INSTALL_SCRIPT = nn-ssh-init-linux.sh
@@ -15,23 +19,28 @@ SSH_INIT_NAME= $(NN)-ssh-init.sh
 SSH_INIT_BIND_PATH = $(ETC_PROFILE_D)$(SSH_INIT_NAME)
 SSH_INIT_INSTALL_PATH = $(DESTDIR)$(SSH_INIT_BIND_PATH)
 ASK_PASS_RUNTIME_PATH  = $(BINDIR)/ssh-ask-pass.sh
+SSHEPHERD_INSTALL_PATH = $(INSTALL_PATH)/sshepherd
+SSHEPHERD_RUNTIME_PATH = $(BINDIR)/sshepherd
 
-install:
+install: build
+	@echo "Installing $(GO_BIN) to $(SSHEPHERD_INSTALL_PATH)"
+	@install -Dm755 $(GO_BIN) $(SSHEPHERD_INSTALL_PATH)
 	@echo "Installing $(SSH_ASK_INSTALL_SCRIPT) to $(SSH_ASK_INSTALL_PATH)"
 	@install -Dm755 $(SSH_ASK_INSTALL_SCRIPT) $(SSH_ASK_INSTALL_PATH)
 	@echo "Installing $(SSH_INIT_INSTALL_SCRIPT) to $(SSH_INIT_INSTALL_PATH)"
 	@install -Dm755 $(SSH_INIT_INSTALL_SCRIPT) $(SSH_INIT_INSTALL_PATH)
-	@echo "Setting ssh-ask-pass path in $(SSH_INIT_INSTALL_PATH) to $(ASK_PASS_RUNTIME_PATH)"
+	@echo "Setting binary paths in $(SSH_INIT_INSTALL_PATH)"
+	@sed -i 's|/usr/local/bin/sshepherd|$(SSHEPHERD_RUNTIME_PATH)|g' $(SSH_INIT_INSTALL_PATH)
 	@sed -i 's|/usr/local/bin/ssh-ask-pass\.sh|$(ASK_PASS_RUNTIME_PATH)|g' $(SSH_INIT_INSTALL_PATH)
 	@echo "Installation complete."
 
 uninstall:
+	@echo "Uninstalling $(SSHEPHERD_INSTALL_PATH)"
+	@rm -f $(SSHEPHERD_INSTALL_PATH)
 	@echo "Uninstalling $(SSH_ASK_INSTALL_PATH)"
 	@rm -f $(SSH_ASK_INSTALL_PATH)
 	@echo "Uninstalling $(SSH_INIT_INSTALL_PATH)"
 	@rm -f $(SSH_INIT_INSTALL_PATH)
-	@echo "Uninstalling $(BINDIR)/ssh-ask-pass.sh"
-	@rm -f $(BINDIR)/ssh-ask-pass.sh
 	@echo "Uninstallation complete."
 
 else
@@ -41,10 +50,15 @@ install uninstall:
 	@exit 1
 endif
 
+build:
+	$(GO) build -o $(GO_BIN) $(GO_MAIN)
+
 print-paths:
 	@echo "PREFIX: $(PREFIX)"
 	@echo "BINDIR: $(BINDIR)"
 	@echo "DESTDIR: $(DESTDIR)"
+	@echo "SSHEPHERD_INSTALL_PATH: $(SSHEPHERD_INSTALL_PATH)"
+	@echo "SSHEPHERD_RUNTIME_PATH: $(SSHEPHERD_RUNTIME_PATH)"
 	@echo "SSH_ASK_INSTALL_PATH: $(SSH_ASK_INSTALL_PATH)"
 	@echo "ASK_PASS_RUNTIME_PATH: $(ASK_PASS_RUNTIME_PATH)"
 	@echo "SSH_INIT_INSTALL_PATH: $(SSH_INIT_INSTALL_PATH)"
@@ -53,7 +67,7 @@ print-paths:
 # editorconfig-checker. Each tool reads its own config file where it has one.
 SH_SCRIPTS = $(wildcard *.sh) $(wildcard .githooks/*)
 
-lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig
+lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
 
 lint-sh:
 	shellcheck $(SH_SCRIPTS)
@@ -71,5 +85,10 @@ lint-yaml:
 lint-editorconfig:
 	editorconfig-checker
 
-.PHONY: install uninstall print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig
+lint-go:
+	@gofmt_out=$$(gofmt -l .); [ -z "$$gofmt_out" ] || { echo "gofmt needed on:"; echo "$$gofmt_out"; exit 1; }
+	$(GO) vet ./...
+	golangci-lint run
+
+.PHONY: install uninstall build print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
 .DEFAULT_GOAL := install
