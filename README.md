@@ -1,4 +1,4 @@
-# sshepherd
+# SSHakku
 
 Tends your SSH agent so every shell can use SSH without retyping the passphrase:
 it starts and watches the agent (lifecycle, health checks, diagnostics, recovery)

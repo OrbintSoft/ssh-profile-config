@@ -1,6 +1,6 @@
 #!/bin/bash
 
-app_name="sshepherd"
+app_name="sshakku"
 # Independently computed to mirror nn-ssh-init's config dir, so both write to the
 # same owner-only log.
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$app_name"

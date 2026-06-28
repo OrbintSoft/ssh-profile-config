@@ -1,11 +1,11 @@
-# Contributing to sshepherd
+# Contributing to SSHakku
 
 Thanks for your interest in contributing! This page explains the licensing terms
 every contribution must follow and how to send changes.
 
 ## Licensing and sign-off
 
-sshepherd is, and will remain, made available to the public under the
+SSHakku is, and will remain, made available to the public under the
 **European Union Public Licence v. 1.2 (`EUPL-1.2`)**. Your contributions go in
 under that licence and are also covered by our
 [Contributor License Agreement](CLA.md).

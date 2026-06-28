@@ -17,31 +17,31 @@ func TestResolveRuntimeDir(t *testing.T) {
 			name:     "XDG_RUNTIME_DIR present",
 			env:      Env{Home: home, RuntimeDir: "/run/user/1000", UID: 1000},
 			probe:    func(p string, _ bool) bool { return p == "/run/user/1000" },
-			wantBase: "/run/user/1000/sshepherd",
+			wantBase: "/run/user/1000/sshakku",
 		},
 		{
 			name:     "fallback to /run/user/UID when owned",
 			env:      Env{Home: home, UID: 1000},
 			probe:    func(p string, owner bool) bool { return p == "/run/user/1000" && owner },
-			wantBase: "/run/user/1000/sshepherd",
+			wantBase: "/run/user/1000/sshakku",
 		},
 		{
 			name:     "/run/user ignored when not owned by us",
 			env:      Env{Home: home, UID: 1000},
 			probe:    func(p string, owner bool) bool { return p == "/run/user/1000" && !owner },
-			wantBase: filepath.Join(home, ".cache", "sshepherd"),
+			wantBase: filepath.Join(home, ".cache", "sshakku"),
 		},
 		{
 			name:     "cache fallback when no tmpfs",
 			env:      Env{Home: home, UID: 1000},
 			probe:    func(string, bool) bool { return false },
-			wantBase: filepath.Join(home, ".cache", "sshepherd"),
+			wantBase: filepath.Join(home, ".cache", "sshakku"),
 		},
 		{
 			name:     "XDG_CACHE_HOME honoured in cache fallback",
 			env:      Env{Home: home, CacheHome: "/cache", UID: 1000},
 			probe:    func(string, bool) bool { return false },
-			wantBase: "/cache/sshepherd",
+			wantBase: "/cache/sshakku",
 		},
 	}
 	for _, tc := range tests {
@@ -63,18 +63,18 @@ func TestResolveRuntimeDir(t *testing.T) {
 func TestWithSocketToken(t *testing.T) {
 	base := Resolve(Env{Home: "/h", RuntimeDir: "/run/user/1", UID: 1},
 		func(p string, _ bool) bool { return p == "/run/user/1" })
-	if base.SocketDir != "/run/user/1/sshepherd" {
+	if base.SocketDir != "/run/user/1/sshakku" {
 		t.Fatalf("base SocketDir = %q", base.SocketDir)
 	}
 
 	got := base.WithSocketToken("deadbeef")
-	if want := "/run/user/1/sshepherd/deadbeef"; got.SocketDir != want {
+	if want := "/run/user/1/sshakku/deadbeef"; got.SocketDir != want {
 		t.Errorf("SocketDir = %q, want %q", got.SocketDir, want)
 	}
-	if want := "/run/user/1/sshepherd/deadbeef/agent.sock"; got.AgentSock != want {
+	if want := "/run/user/1/sshakku/deadbeef/agent.sock"; got.AgentSock != want {
 		t.Errorf("AgentSock = %q, want %q", got.AgentSock, want)
 	}
-	if want := "/run/user/1/sshepherd/deadbeef/.start.lock"; got.AgentLock != want {
+	if want := "/run/user/1/sshakku/deadbeef/.start.lock"; got.AgentLock != want {
 		t.Errorf("AgentLock = %q, want %q", got.AgentLock, want)
 	}
 	if got.RuntimeDir != base.RuntimeDir {
@@ -89,15 +89,15 @@ func TestResolveConfigDir(t *testing.T) {
 	noProbe := func(string, bool) bool { return false }
 
 	got := Resolve(Env{Home: "/home/u", UID: 1}, noProbe)
-	if want := "/home/u/.config/sshepherd"; got.ConfigDir != want {
+	if want := "/home/u/.config/sshakku"; got.ConfigDir != want {
 		t.Errorf("ConfigDir = %q, want %q", got.ConfigDir, want)
 	}
-	if want := "/home/u/.config/sshepherd/sessions.log"; got.LogFile != want {
+	if want := "/home/u/.config/sshakku/sessions.log"; got.LogFile != want {
 		t.Errorf("LogFile = %q, want %q", got.LogFile, want)
 	}
 
 	got = Resolve(Env{Home: "/home/u", ConfigHome: "/cfg", UID: 1}, noProbe)
-	if want := "/cfg/sshepherd"; got.ConfigDir != want {
+	if want := "/cfg/sshakku"; got.ConfigDir != want {
 		t.Errorf("ConfigDir with XDG_CONFIG_HOME = %q, want %q", got.ConfigDir, want)
 	}
 }

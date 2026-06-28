@@ -1,4 +1,4 @@
-# sshepherd — Design notes & lessons learned
+# SSHakku — Design notes & lessons learned
 
 Living document. Captures how this thing actually behaves on the target box,
 the June 2026 breakage and its root cause, and the principles we want the

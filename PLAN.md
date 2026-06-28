@@ -1,4 +1,4 @@
-# sshepherd — PLAN
+# SSHakku — PLAN
 
 Roadmap for the rewrite. We fix the **goals** first; the **phases** come after the
 goals are reviewed and agreed. See `CLAUDE.md` for the project rules and
@@ -197,17 +197,17 @@ honoured) before or during the phases. Each notes the related goal.
     write `/etc/profile.d`, so its bootstrap hook moves to `~/.bashrc` /
     `~/.config/plasma-workspace/env/` — pick the per-user hook in step 1.2.
     **Decided (step 1.1):** config **and** the session log live together under
-    `${XDG_CONFIG_HOME:-~/.config}/sshepherd` (one discoverable tree, not the
+    `${XDG_CONFIG_HOME:-~/.config}/sshakku` (one discoverable tree, not the
     `$XDG_STATE_HOME` split sketched above). The agent socket goes in the per-user
     tmpfs, resolved independently of the desktop/display server:
-    `$XDG_RUNTIME_DIR/sshepherd` → `/run/user/$UID/sshepherd` (probed, owned by us)
-    → `${XDG_CACHE_HOME:-~/.cache}/sshepherd` when no logind exists. An
+    `$XDG_RUNTIME_DIR/sshakku` → `/run/user/$UID/sshakku` (probed, owned by us)
+    → `${XDG_CACHE_HOME:-~/.cache}/sshakku` when no logind exists. An
     unpredictable per-login token from the `@u` user keyring is inserted as a path
     component (`<runtime_dir>/<token>/agent.sock`) so the path is not reproducible
     across logins/reboots — defense-in-depth above the ownership+`0700` boundary;
     it degrades to the plain runtime dir when `keyctl` is absent. Deferred to the
     Go core (which owns path computation behind the entrypoint seam): keyring via
-    syscalls (no `keyctl` binary), a `/dev/shm/sshepherd/$UID/<token>/` tmpfs
+    syscalls (no `keyctl` binary), a `/dev/shm/sshakku/$UID/<token>/` tmpfs
     fallback with parent-validation (`lstat`/owner/no-symlink) + a `tmpfiles.d`
     entry for the system install, optional `boot_id` rotation for the `~/.cache`
     fallback, and optional per-login agent isolation as a config flag. The
@@ -221,15 +221,18 @@ honoured) before or during the phases. Each notes the related goal.
     agent forwarding. Realised with the config file in the configurability phase.
 
 14. **Project name (goal identity).** **Decided:** the project is named
-    **sshepherd** (`ssh` + *shepherd*: it tends the agent — lifecycle, health
-    checks, diagnostics and recovery — and loads and guards the keys, pulling each
-    passphrase from the OS secret store). It replaces the original
-    `ssh-profile-config`, which mislabelled the tool as an `~/.ssh/config` manager
-    (it manages neither SSH connection profiles nor `~/.ssh/config`) and described
-    the bootstrap mechanism (`profile.d`) rather than the purpose. The `<name>`
-    placeholder in the path layout (goal 19, open decision 12) resolves to
-    `sshepherd`. A short command alias `shep` is to be provided by the CLI when it
-    lands. The GitHub repository and the Gentoo package are renamed to match.
+    **SSHakku** (from Akkadian *iššakku*, a steward who administers an estate on
+    behalf of its owner — here it tends the SSH agent and guards the keys, pulling
+    each passphrase from the OS secret store; the name also surfaces `ssh`). It
+    replaces the original `ssh-profile-config`, which mislabelled the tool as an
+    `~/.ssh/config` manager (it manages neither SSH connection profiles nor
+    `~/.ssh/config`) and described the bootstrap mechanism (`profile.d`) rather than
+    the purpose. An earlier working name, *sshepherd*, was dropped to avoid a clash
+    with an active registered trademark (FullArmor's **SSHepherd®**) in the
+    SSH-security space. The `<name>` placeholder in the path layout (goal 19, open
+    decision 12) resolves to `sshakku`. A short command alias `shak` is to be
+    provided by the CLI when it lands. The GitHub repository and the Gentoo package
+    are renamed to match.
 
 ---
 
@@ -374,7 +377,7 @@ Sub-phases (detailed steps written when we start each one):
 - **1.3 — Silent-on-success & shell safety, with the Go seam.** Zero stdout/stderr
   on the success path; `set -u`-clean; degrade gracefully when `keyctl` / `flock`
   are absent. The seam is now real: the entrypoint evals the Go core
-  (`sshepherd shell-init`, Phase 2 slice 1), so the remaining 1.3 work is the
+  (`sshakku shell-init`, Phase 2 slice 1), so the remaining 1.3 work is the
   silence / `set -u` hardening layered on top. → goal 3; open decision 3; threat
   I4; invariant 2.
 - **1.4 — Agent lifecycle & recovery.** Keep never-kill-a-healthy-agent (`ssh-add
@@ -404,10 +407,10 @@ tests plus container integration tests on Linux. Go entered the repo early (slic
 
 **Brought forward — Go core grown incrementally (strangler).** Instead of one
 wholesale rewrite, the Go core is added slice by slice behind the entrypoint seam
-while the bash shrinks toward a thin `eval "$(sshepherd shell-init)"`. Each slice
+while the bash shrinks toward a thin `eval "$(sshakku shell-init)"`. Each slice
 is committable and the bash keeps working until each piece moves.
 
-- **Slice 1 — path / token / dir / log core. ✅ Done.** `cmd/sshepherd` +
+- **Slice 1 — path / token / dir / log core. ✅ Done.** `cmd/sshakku` +
   `internal/paths` + `internal/sessionlog`: path resolution (config dir; runtime
   dir XDG_RUNTIME_DIR → /run/user/$UID owned → ~/.cache), the per-login `@u`
   keyring token via the `keyctl(2)` syscall (`golang.org/x/sys`, no `keyctl`
@@ -418,7 +421,7 @@ is committable and the bash keeps working until each piece moves.
 - **Slice 2 — agent lifecycle** (the Phase 1.4 work, in Go): reachability, start
   on the fixed socket, never-kill-a-healthy-agent, dangling-socket cleanup.
 - **Slice 3 — key loading + `askpass`**: key enumeration / fingerprint dedup,
-  secret lookup and prompt, and an `sshepherd askpass` subcommand that retires
+  secret lookup and prompt, and an `sshakku askpass` subcommand that retires
   `ssh-ask-pass-linux.sh`.
 - **Slice 4 — retries / give-up + key-expiry**: the original Phase 2 stateful
   logic; by here the bash is just the thin hook.

@@ -1,4 +1,4 @@
-module github.com/OrbintSoft/sshepherd
+module github.com/OrbintSoft/sshakku
 
 go 1.25.0
 

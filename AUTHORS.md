@@ -1,6 +1,6 @@
 # Authors
 
-Everyone who has contributed to sshepherd. Entries are recorded from the
+Everyone who has contributed to SSHakku. Entries are recorded from the
 Git history; open a pull request to add or correct one. Contributors keep the
 copyright in their contributions — see [COPYRIGHT.md](COPYRIGHT.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
