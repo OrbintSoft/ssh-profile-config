@@ -1,8 +1,8 @@
-// Command sshepherd tends the SSH agent: it computes the per-user runtime
+// Command sshakku tends the SSH agent: it computes the per-user runtime
 // paths, keeps the agent healthy, and loads keys with passphrases pulled from
 // the OS secret store. The login shell wires it in by evaluating its output:
 //
-//	eval "$(sshepherd shell-init)"
+//	eval "$(sshakku shell-init)"
 package main
 
 import (
@@ -11,13 +11,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OrbintSoft/sshepherd/internal/paths"
-	"github.com/OrbintSoft/sshepherd/internal/sessionlog"
+	"github.com/OrbintSoft/sshakku/internal/paths"
+	"github.com/OrbintSoft/sshakku/internal/sessionlog"
 )
 
-const usage = `sshepherd — SSH agent and key shepherd
+const usage = `sshakku — SSH agent and key shepherd
 
-usage: sshepherd <command>
+usage: sshakku <command>
 
 commands:
   shell-init   print shell assignments for the login entrypoint to eval
@@ -42,7 +42,7 @@ func run(stdout, stderr io.Writer, args []string) int {
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
 	default:
-		_, _ = fmt.Fprintf(stderr, "sshepherd: unknown command %q\n\n%s", args[0], usage)
+		_, _ = fmt.Fprintf(stderr, "sshakku: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
@@ -62,7 +62,7 @@ func shellInit(stdout, stderr io.Writer) int {
 	if err := paths.Ensure(layout); err != nil {
 		// Best-effort: the log dir may be the very thing we failed to create.
 		_ = sessionlog.New(layout.LogFile).Log("ERROR", fmt.Sprintf("shell-init: %v", err))
-		_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
 		return 1
 	}
 	paths.CleanupLegacyAgentDir(env.Home)
@@ -74,7 +74,7 @@ func shellInit(stdout, stderr io.Writer) int {
 	}
 	for _, a := range assignments {
 		if _, err := fmt.Fprintf(stdout, "%s=%s\n", a.name, shellSingleQuote(a.value)); err != nil {
-			_, _ = fmt.Fprintf(stderr, "sshepherd: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
 			return 1
 		}
 	}

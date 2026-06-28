@@ -1,4 +1,4 @@
-// Package paths computes and creates sshepherd's per-user runtime layout: config
+// Package paths computes and creates sshakku's per-user runtime layout: config
 // and the session log under the config dir, the agent socket in the per-user
 // tmpfs — always outside ~/.ssh, which is OpenSSH's domain.
 package paths
@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-const app = "sshepherd"
+const app = "sshakku"
 
 // Env holds the environment inputs to the path computation, so Resolve stays a
 // pure function that is easy to test.

@@ -1,4 +1,4 @@
-# sshepherd — Threat model
+# SSHakku — Threat model
 
 Formal threat model for the secret and SSH-agent handling. It exists so the
 rewrite — and every later platform port and secret backend — has one explicit

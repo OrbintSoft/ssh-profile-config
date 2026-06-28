@@ -10,8 +10,8 @@ import (
 
 func TestEnsureCreatesLayout(t *testing.T) {
 	root := t.TempDir()
-	runtime := filepath.Join(root, "run", "sshepherd")
-	config := filepath.Join(root, "cfg", "sshepherd")
+	runtime := filepath.Join(root, "run", "sshakku")
+	config := filepath.Join(root, "cfg", "sshakku")
 	l := Layout{
 		ConfigDir:  config,
 		RuntimeDir: runtime,
