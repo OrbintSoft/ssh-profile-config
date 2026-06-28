@@ -1,4 +1,4 @@
-# sshepherd — project rules
+# SSHakku — project rules
 
 Rules for the rewrite of this project. Numbered, authoritative; add new rules by
 appending. See `docs/DESIGN-NOTES.md` for background and the June 2026 incident.

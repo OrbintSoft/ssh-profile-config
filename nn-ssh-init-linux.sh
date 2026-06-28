@@ -18,7 +18,7 @@
 
 key_dir="$HOME/.ssh"
 key_prefix="SSH-Key"
-sshepherd_bin="/usr/local/bin/sshepherd"
+sshakku_bin="/usr/local/bin/sshakku"
 ssh_askpass_script="/usr/local/bin/ssh-ask-pass.sh"
 max_log_lines=100
 max_attempts=3
@@ -61,8 +61,8 @@ ssh_agent_reachable() {
 agent_sock=""
 agent_lock=""
 log_file=""
-if [ -x "$sshepherd_bin" ]; then
-	eval "$("$sshepherd_bin" shell-init)"
+if [ -x "$sshakku_bin" ]; then
+	eval "$("$sshakku_bin" shell-init)"
 fi
 # Without the resolved paths there is nothing we can safely do.
 [ -n "$agent_sock" ] && [ -n "$log_file" ] || return

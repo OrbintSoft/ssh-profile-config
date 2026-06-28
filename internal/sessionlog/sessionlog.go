@@ -1,4 +1,4 @@
-// Package sessionlog appends timestamped, level-tagged lines to sshepherd's
+// Package sessionlog appends timestamped, level-tagged lines to sshakku's
 // owner-only session log and keeps it bounded to a fixed number of recent lines.
 package sessionlog
 
