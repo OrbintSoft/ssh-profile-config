@@ -168,3 +168,8 @@ func (g *fakeGiveup) Clear(key string) error {
 	delete(g.given, key)
 	return nil
 }
+
+// fakeNotifier records the user-facing notices a Loader emits.
+type fakeNotifier struct{ msgs []string }
+
+func (n *fakeNotifier) Notify(message string) { n.msgs = append(n.msgs, message) }

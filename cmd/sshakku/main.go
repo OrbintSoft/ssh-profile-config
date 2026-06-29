@@ -232,6 +232,11 @@ func loadKeys(stderr io.Writer) int {
 		}
 	}
 
+	var notifier keys.Notifier
+	if !isTruthy(os.Getenv("SSHAKKU_QUIET")) {
+		notifier = stderrNotifier{w: stderr}
+	}
+
 	runner := keys.ExecRunner{}
 	prompter := keys.KDialogPrompter{Runner: runner}
 	guiEnv := keys.GUIEnv{
@@ -246,6 +251,7 @@ func loadKeys(stderr io.Writer) int {
 		Prompt: prompter,
 		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: lifetime},
 		Log:    log,
+		Notify: notifier,
 		Giveup: giveupStore,
 		Config: keys.Config{
 			GUI:         keys.GUIAvailable(guiEnv, runner, prompter),
@@ -315,6 +321,14 @@ func isTruthy(raw string) bool {
 		return true
 	}
 	return false
+}
+
+// stderrNotifier surfaces a user-facing notice to the terminal of the
+// interactive shell that ran load-keys; $SSHAKKU_QUIET suppresses it.
+type stderrNotifier struct{ w io.Writer }
+
+func (n stderrNotifier) Notify(message string) {
+	_, _ = fmt.Fprintf(n.w, "sshakku: %s\n", message)
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,

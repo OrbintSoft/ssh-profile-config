@@ -2,6 +2,7 @@ package keys
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -84,30 +85,10 @@ func TestLoadKeysPromptThenStore(t *testing.T) {
 
 func TestLoadKeysRetriesThenGivesUp(t *testing.T) {
 	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
-	secret := &fakeSecret{lookupPass: "wrong", lookupFound: true}
-	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1}}
-	log := &fakeLogger{}
-	l := Loader{
-		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
-		Runner: r, Secret: secret, Prompt: &fakePrompter{}, Adder: adder, Log: log,
-		Config: Config{GUI: true},
-	}
-	if err := l.LoadKeys(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(adder.calls) != 3 {
-		t.Fatalf("want 3 attempts, got %d", len(adder.calls))
-	}
-	if !log.contains("attempt 3/3") {
-		t.Fatalf("expected a final failed-attempt log, got %v", log.lines)
-	}
-}
-
-func TestLoadKeysPromptCanceled(t *testing.T) {
-	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
-	secret := &fakeSecret{lookupFound: false}
-	prompter := &fakePrompter{err: ErrPromptCanceled}
-	adder := &fakeKeyAdder{}
+	secret := &fakeSecret{lookupPass: "stale", lookupFound: true}
+	prompter := &fakePrompter{pass: "still-wrong"}
+	// The stale stored passphrase gets one try, then three prompted attempts; all fail.
+	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1, 1}}
 	log := &fakeLogger{}
 	l := Loader{
 		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
@@ -117,11 +98,81 @@ func TestLoadKeysPromptCanceled(t *testing.T) {
 	if err := l.LoadKeys(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if len(adder.calls) != 4 {
+		t.Fatalf("want 1 stored + 3 prompted attempts, got %d", len(adder.calls))
+	}
+	if !log.contains("attempt 3/3") || !log.contains("giving up") {
+		t.Fatalf("expected final-attempt and give-up logs, got %v", log.lines)
+	}
+}
+
+func TestLoadKeysStaleStoredThenPromptStores(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	secret := &fakeSecret{lookupPass: "stale", lookupFound: true}
+	prompter := &fakePrompter{pass: "fresh"}
+	adder := &fakeKeyAdder{withCodes: []int{1, 0}} // stored rejected, prompted accepted
+	log := &fakeLogger{}
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: secret, Prompt: prompter, Adder: adder, Log: log,
+		Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(adder.calls) != 2 || adder.calls[0].passphrase != "stale" || adder.calls[1].passphrase != "fresh" {
+		t.Fatalf("calls = %+v, want a stale then a fresh add", adder.calls)
+	}
+	if len(secret.stored) != 1 || secret.stored[0].passphrase != "fresh" {
+		t.Fatalf("the fresh passphrase must replace the stale one, got %v", secret.stored)
+	}
+	if !log.contains("is stale") {
+		t.Fatalf("expected a stale-passphrase log, got %v", log.lines)
+	}
+}
+
+func TestLoadKeysNotifiesOnGiveup(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	secret := &fakeSecret{lookupFound: false}
+	prompter := &fakePrompter{pass: "wrong"}
+	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1}}
+	notifier := &fakeNotifier{}
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: secret, Prompt: prompter, Adder: adder, Log: &fakeLogger{},
+		Notify: notifier, Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(notifier.msgs) != 1 || !strings.Contains(notifier.msgs[0], "could not load key id_rsa") {
+		t.Fatalf("expected one give-up notice, got %v", notifier.msgs)
+	}
+}
+
+func TestLoadKeysPromptCanceled(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	secret := &fakeSecret{lookupFound: false}
+	prompter := &fakePrompter{err: ErrPromptCanceled}
+	adder := &fakeKeyAdder{}
+	notifier := &fakeNotifier{}
+	log := &fakeLogger{}
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: secret, Prompt: prompter, Adder: adder, Log: log,
+		Notify: notifier, Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(adder.calls) != 0 {
 		t.Fatalf("a canceled prompt must not add, got %d", len(adder.calls))
 	}
 	if !log.contains("canceled") {
 		t.Fatalf("expected a canceled log, got %v", log.lines)
+	}
+	if len(notifier.msgs) != 0 {
+		t.Fatalf("a canceled prompt must not notify, got %v", notifier.msgs)
 	}
 }
 
@@ -169,12 +220,13 @@ func TestLoadKeysSkipsGivenUp(t *testing.T) {
 
 func TestLoadKeysRecordsGiveupAfterRetries(t *testing.T) {
 	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
-	secret := &fakeSecret{lookupPass: "wrong", lookupFound: true}
-	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1}}
+	secret := &fakeSecret{lookupPass: "stale", lookupFound: true}
+	prompter := &fakePrompter{pass: "still-wrong"}
+	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1, 1}}
 	give := newFakeGiveup()
 	l := Loader{
 		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
-		Runner: r, Secret: secret, Prompt: &fakePrompter{}, Adder: adder, Log: &fakeLogger{},
+		Runner: r, Secret: secret, Prompt: prompter, Adder: adder, Log: &fakeLogger{},
 		Giveup: give, Config: Config{GUI: true},
 	}
 	if err := l.LoadKeys(); err != nil {
