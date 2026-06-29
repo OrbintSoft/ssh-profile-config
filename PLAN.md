@@ -2,8 +2,8 @@
 
 Roadmap for the rewrite. We fix the **goals** first; the **phases** come after the
 goals are reviewed and agreed. See `CLAUDE.md` for the project rules and
-`docs/DESIGN-NOTES.md` for background and the June 2026 incident that motivated
-the rewrite.
+`docs/THREAT-MODEL.md` for the threat model and the June 2026 incident that
+motivated the rewrite.
 
 ---
 
@@ -316,8 +316,8 @@ Sub-phases (detailed steps written when we start each one):
   (zsh linting deferred to the macOS phase). `editorconfig-checker` **adopted**
   (whole tree; it honours `.gitignore`, so scratch files are skipped). Each tool
   reads its own config file (rule 13): `.markdownlint-cli2.yaml` (disables
-  MD013/MD029/MD060 — see below — and excludes the throwaway
-  `docs/DESIGN-NOTES.md`), `checkmake.ini` (relaxes `minphony`/`maxbodylength`),
+  MD013/MD029/MD060 — see below), `checkmake.ini` (relaxes
+  `minphony`/`maxbodylength`),
   `.editorconfig-checker.json` (excludes `LICENSE` verbatim and the deferred
   `*.zsh`). To satisfy the new linters with no behaviour change: shell scripts
   reformatted with `shfmt -w`, `.vscode/settings.json` reindented to 2 spaces, and
@@ -431,10 +431,22 @@ Sub-phases (detailed steps written when we start each one):
   Phase 2 note): this lifecycle logic moves into the Go core rather than staying in
   bash. → goals 5, 6, 8; threats D1, D5.
 - **1.5 — Shell test harness (rule 12).** `bats` unit tests + container integration
-  tests covering the plumbing scenarios (the DESIGN-NOTES §7 checklist: re-login,
-  kill agent, empty wallet, reachable-but-empty). `bats` is a new file type —
-  evaluate a linter and record the decision (including a deliberate "no linter")
-  here. → goal 16.
+  tests covering the plumbing regression scenarios below. `bats` is a new file
+  type — evaluate a linter and record the decision (including a deliberate "no
+  linter") here. → goal 16.
+
+  Plumbing regression checklist (post-change):
+
+  1. Fresh login → two terminals → both see the key in `ssh-add -l`, with **no**
+     passphrase prompt the second time.
+  2. `SSH_AUTH_SOCK` is the fixed socket path in every terminal and in a GUI app
+     (e.g. inspect `/proc/<plasmashell-pid>/environ`).
+  3. Kill the agent (`ssh-agent -k` / `pkill ssh-agent`) → a new terminal restarts
+     it at the **same** socket path and reloads the key.
+  4. First-ever run with an empty vault → prompts once, then `secret-tool lookup`
+     returns the passphrase on later logins (no prompt).
+  5. Reachable-but-empty agent (`ssh-add -l` exit 1) must be treated as **healthy**
+     and never killed (the D1 regression).
 
 ### Phase 2 — Go logic core
 
@@ -497,7 +509,7 @@ tool highly parametrizable via a config file. → goals 11, 15; open decision 7.
 
 ### Phase 5 — Widen the OS targets
 
-macOS as a wide port, then Windows last as the most divergent target (service + named
+macOS as a wide port, never trust Apple; then Windows last as the most divergent target (service + named
 pipe, no socket). → goals 12, 13; open decision 8.
 
 ### Phase 6 — Full test matrix

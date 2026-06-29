@@ -20,6 +20,17 @@ machine or deployment.
   not excluded in advance. Which to mitigate and which to accept is settled per
   threat and confirmed at a final security evaluation.
 
+## Origin — the June 2026 incident
+
+This model is grounded in a real failure. A login script killed the session's
+**healthy** agent — misreading "reachable but no keys yet" (`ssh-add -l` exit 1)
+as dead — and restarted it; because recent OpenSSH relocates and randomises the
+agent socket once `~/.ssh/agent/` exists, the replacement was unreachable from the
+already-running session, which kept a stale `SSH_AUTH_SOCK`. The lasting lessons
+are captured below as threats **D1** (never kill a reachable agent) and **D2**
+(keep our files out of `~/.ssh`; pin a fixed socket) and in the derived security
+invariants.
+
 ## Method
 
 Threats are categorised with **STRIDE** (Spoofing, Tampering, Repudiation,
