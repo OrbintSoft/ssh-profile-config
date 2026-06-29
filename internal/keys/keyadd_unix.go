@@ -37,6 +37,10 @@ type ExecKeyAdder struct {
 	AddTimeout time.Duration
 	// KeyTTL bounds the stashed passphrase's lifetime; 0 uses defaultKeyTTL.
 	KeyTTL time.Duration
+	// KeyLifetime caps how long the added key stays in the agent (ssh-add -t),
+	// after which it must be re-added from the vault. 0 adds the key with no
+	// expiry; the caller resolves the default.
+	KeyLifetime time.Duration
 }
 
 // AddWithAskpass stashes passphrase in the keyring, then runs ssh-add detached
@@ -86,7 +90,7 @@ func (a ExecKeyAdder) runSSHAdd(env []string, keyfile string, askpass bool) (int
 	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ssh-add", keyfile)
+	cmd := exec.CommandContext(ctx, "ssh-add", sshAddArgs(a.KeyLifetime, keyfile)...)
 	cmd.Env = env
 	if askpass {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -108,6 +112,17 @@ func (a ExecKeyAdder) runSSHAdd(env []string, keyfile string, askpass bool) (int
 		return 0, err
 	}
 	return 0, nil
+}
+
+// sshAddArgs builds the ssh-add argument list, prepending "-t <seconds>" when a
+// positive lifetime caps how long the key stays in the agent before it expires.
+// A sub-second lifetime would round to "-t 0" (immediate expiry), so it is
+// treated as no expiry instead.
+func sshAddArgs(lifetime time.Duration, keyfile string) []string {
+	if secs := int64(lifetime / time.Second); secs > 0 {
+		return []string{"-t", strconv.FormatInt(secs, 10), keyfile}
+	}
+	return []string{keyfile}
 }
 
 // randomKeyDesc returns a unique keyring description, so concurrent key loads do

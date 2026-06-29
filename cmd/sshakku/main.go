@@ -26,6 +26,11 @@ import (
 // proceeds without it, so a stuck holder slows the login but never hangs it.
 const agentLockWait = 5 * time.Second
 
+// defaultKeyLifetime caps how long an added key stays in the agent before it
+// expires and must be re-added from the vault. $SSHAKKU_KEY_LIFETIME overrides
+// it; a zero or negative value disables expiry.
+const defaultKeyLifetime = 8 * time.Hour
+
 const usage = `sshakku — SSH agent and key shepherd
 
 usage: sshakku <command>
@@ -203,6 +208,11 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 
+	lifetime, lerr := keyLifetime(os.Getenv("SSHAKKU_KEY_LIFETIME"))
+	if lerr != nil {
+		_ = log.Log("ERROR", lerr.Error())
+	}
+
 	runner := keys.ExecRunner{}
 	prompter := keys.KDialogPrompter{Runner: runner}
 	guiEnv := keys.GUIEnv{
@@ -215,7 +225,7 @@ func loadKeys(stderr io.Writer) int {
 		Runner: runner,
 		Secret: keys.SecretToolBackend{Runner: runner, User: currentUser()},
 		Prompt: prompter,
-		Adder:  keys.ExecKeyAdder{AskpassProg: self},
+		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: lifetime},
 		Log:    log,
 		Config: keys.Config{GUI: keys.GUIAvailable(guiEnv, runner, prompter)},
 	}
@@ -225,6 +235,25 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// keyLifetime resolves the agent key lifetime from $SSHAKKU_KEY_LIFETIME (a Go
+// duration such as "1h" or "20m"), defaulting to defaultKeyLifetime. A zero or
+// negative value disables expiry (the key stays until the agent does); a
+// malformed value falls back to the default and is returned with an error for
+// the caller to log.
+func keyLifetime(raw string) (time.Duration, error) {
+	if raw == "" {
+		return defaultKeyLifetime, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultKeyLifetime, fmt.Errorf("invalid SSHAKKU_KEY_LIFETIME %q: %w", raw, err)
+	}
+	if d < 0 {
+		return 0, nil
+	}
+	return d, nil
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,
