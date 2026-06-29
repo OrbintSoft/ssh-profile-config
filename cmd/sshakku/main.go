@@ -46,6 +46,7 @@ commands:
   shell-init     drive the agent healthy and print shell assignments to eval
   ensure-agent   drive the agent to a healthy state and print agent_sock
   load-keys      add the user's ssh keys to the agent (interactive sessions)
+  askpass-env    print exports routing ssh's askpass through sshakku (GUI only)
   help           show this help
 `
 
@@ -73,6 +74,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return ensureAgent(stdout, stderr)
 	case "load-keys":
 		return loadKeys(stderr)
+	case "askpass-env":
+		return askpassEnv(stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -361,6 +364,42 @@ type stderrNotifier struct{ w io.Writer }
 
 func (n stderrNotifier) Notify(message string) {
 	_, _ = fmt.Fprintf(n.w, "sshakku: %s\n", message)
+}
+
+// askpassEnv prints the export lines that route this interactive shell's ssh
+// passphrase prompts through sshakku's wallet-aware broker, so a key that expires
+// from the agent is refilled from the wallet without a terminal prompt. It emits
+// them only when a graphical prompter is available — a headless session keeps
+// ssh's own terminal prompting — and the login entrypoint evals it in interactive
+// shells only, never for non-interactive sessions (scp/rsync/git).
+func askpassEnv(stdout, stderr io.Writer) int {
+	runner := keys.ExecRunner{}
+	guiEnv := keys.GUIEnv{
+		WaylandDisplay: os.Getenv("WAYLAND_DISPLAY"),
+		Display:        os.Getenv("DISPLAY"),
+	}
+	if !keys.GUIAvailable(guiEnv, runner, keys.KDialogPrompter{Runner: runner}) {
+		return 0
+	}
+	self, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	if _, err := io.WriteString(stdout, askpassExports(self)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// askpassExports returns the shell `export` lines pointing ssh's SSH_ASKPASS at
+// self's wallet-aware broker; REQUIRE=prefer makes ssh consult it even with a tty.
+func askpassExports(self string) string {
+	return fmt.Sprintf(
+		"export SSH_ASKPASS=%s\nexport SSH_ASKPASS_REQUIRE=prefer\nexport %s=1\n",
+		shellSingleQuote(self), keys.EnvAskpassMode,
+	)
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,

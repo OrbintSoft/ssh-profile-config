@@ -31,4 +31,8 @@ unset SSH_AGENT_PID
 # terminal, which must never happen for non-interactive sessions (scp/rsync/git).
 if [[ $- == *i* ]]; then
 	"$sshakku_bin" load-keys
+	# Route this shell's ssh passphrase prompts through sshakku's wallet-aware
+	# askpass, so a key that expires from the agent is refilled from the wallet
+	# without a terminal prompt. Emitted only when a graphical prompter exists.
+	eval "$("$sshakku_bin" askpass-env)"
 fi
