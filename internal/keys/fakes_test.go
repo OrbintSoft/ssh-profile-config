@@ -34,6 +34,21 @@ func stdout(out string, code int) func(Cmd) (Result, error) {
 	}
 }
 
+// fakePrompter is a Prompter whose availability and answer are scripted.
+type fakePrompter struct {
+	avail bool
+	pass  string
+	err   error
+	calls []string
+}
+
+func (p *fakePrompter) Available() bool { return p.avail }
+
+func (p *fakePrompter) Prompt(keyname string) (string, error) {
+	p.calls = append(p.calls, keyname)
+	return p.pass, p.err
+}
+
 // fails builds a handler that reports a failure to start the process.
 func fails(err error) func(Cmd) (Result, error) {
 	return func(Cmd) (Result, error) { return Result{}, err }

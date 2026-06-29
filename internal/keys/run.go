@@ -40,3 +40,7 @@ func (ExecRunner) Run(c Cmd) (Result, error) {
 }
 
 var _ Runner = ExecRunner{}
+
+// execLookPath resolves a binary on PATH; it is a variable so tests can stub the
+// PATH lookup.
+var execLookPath = exec.LookPath
