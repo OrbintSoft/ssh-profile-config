@@ -145,6 +145,64 @@ func TestLoadKeysNoGUITerminalPath(t *testing.T) {
 	}
 }
 
+func TestLoadKeysSkipsGivenUp(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	adder := &fakeKeyAdder{}
+	give := newFakeGiveup()
+	give.given["id_rsa"] = true
+	log := &fakeLogger{}
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: &fakeSecret{}, Prompt: &fakePrompter{}, Adder: adder, Log: log,
+		Giveup: give, Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(adder.calls) != 0 {
+		t.Fatalf("a given-up key must not be added, got %d adds", len(adder.calls))
+	}
+	if !log.contains("given up earlier") {
+		t.Fatalf("expected a skip log, got %v", log.lines)
+	}
+}
+
+func TestLoadKeysRecordsGiveupAfterRetries(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	secret := &fakeSecret{lookupPass: "wrong", lookupFound: true}
+	adder := &fakeKeyAdder{withCodes: []int{1, 1, 1}}
+	give := newFakeGiveup()
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: secret, Prompt: &fakePrompter{}, Adder: adder, Log: &fakeLogger{},
+		Giveup: give, Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(give.recorded) != 1 || give.recorded[0] != "id_rsa" {
+		t.Fatalf("recorded = %v, want [id_rsa]", give.recorded)
+	}
+}
+
+func TestLoadKeysClearsGiveupOnSuccess(t *testing.T) {
+	r := newFakeRunner().on("ssh-add", agentEmpty()).on("ssh-keygen", keygen("SHA256:NEW"))
+	secret := &fakeSecret{lookupPass: "ok", lookupFound: true}
+	adder := &fakeKeyAdder{withCodes: []int{0}}
+	give := newFakeGiveup()
+	l := Loader{
+		Keys:   fakeLister{paths: []string{"/ssh/id_rsa"}},
+		Runner: r, Secret: secret, Prompt: &fakePrompter{}, Adder: adder, Log: &fakeLogger{},
+		Giveup: give, Config: Config{GUI: true},
+	}
+	if err := l.LoadKeys(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(give.cleared) != 1 || give.cleared[0] != "id_rsa" {
+		t.Fatalf("cleared = %v, want [id_rsa]", give.cleared)
+	}
+}
+
 func TestLoadKeysNoKeys(t *testing.T) {
 	r := newFakeRunner() // ssh-add must not be consulted
 	log := &fakeLogger{}

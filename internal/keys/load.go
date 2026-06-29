@@ -33,6 +33,18 @@ type KeyAdder interface {
 	AddInteractive(keyfile string) (int, error)
 }
 
+// GiveupStore persists, per key, that loading was abandoned after the bounded
+// retries, so later shells skip the key instead of re-prompting on every new
+// terminal. A nil GiveupStore disables give-up.
+type GiveupStore interface {
+	// GivenUp reports whether the key is currently in the give-up state.
+	GivenUp(key string) bool
+	// Record marks the key as given up after its retries were exhausted.
+	Record(key string) error
+	// Clear removes any give-up record for the key (e.g. after a success).
+	Clear(key string) error
+}
+
 // Config tunes a Loader.
 type Config struct {
 	// GUI is true when a graphical session and prompter are available, selecting
@@ -53,6 +65,7 @@ type Loader struct {
 	Prompt Prompter
 	Adder  KeyAdder
 	Log    Logger
+	Giveup GiveupStore
 	Config Config
 }
 
@@ -93,6 +106,10 @@ func (l Loader) loadOne(keyfile string, loaded map[string]bool) {
 		l.logf("INFO", "%s already added to agent", keyname)
 		return
 	}
+	if l.givenUp(keyname) {
+		l.logf("INFO", "%s given up earlier, skipping until the retry window", keyname)
+		return
+	}
 	l.addWithRetries(keyfile, keyname)
 }
 
@@ -115,10 +132,13 @@ func (l Loader) addWithRetries(keyfile, keyname string) {
 		}
 		if rc == 0 {
 			l.logf("INFO", "added %s to agent", keyname)
+			l.clearGiveup(keyname)
 			return
 		}
 		l.logf("ERROR", "failed to add %s (attempt %d/%d)", keyname, attempt, max)
 	}
+	l.logf("ERROR", "giving up on %s after %d attempts", keyname, max)
+	l.recordGiveup(keyname)
 }
 
 // addOnce performs one add attempt: the secret-store + askpass path when a GUI is
@@ -173,6 +193,32 @@ func (l Loader) storePassphrase(service, keyname, passphrase string) {
 		return
 	}
 	l.logf("INFO", "stored passphrase for %s", keyname)
+}
+
+// givenUp reports whether give-up tracking is enabled and the key is currently
+// in the give-up state.
+func (l Loader) givenUp(keyname string) bool {
+	return l.Giveup != nil && l.Giveup.GivenUp(keyname)
+}
+
+// recordGiveup persists that the key was abandoned after its retries, best-effort.
+func (l Loader) recordGiveup(keyname string) {
+	if l.Giveup == nil {
+		return
+	}
+	if err := l.Giveup.Record(keyname); err != nil {
+		l.logf("ERROR", "record give-up for %s: %v", keyname, err)
+	}
+}
+
+// clearGiveup drops any give-up record after a successful add, best-effort.
+func (l Loader) clearGiveup(keyname string) {
+	if l.Giveup == nil {
+		return
+	}
+	if err := l.Giveup.Clear(keyname); err != nil {
+		l.logf("ERROR", "clear give-up for %s: %v", keyname, err)
+	}
 }
 
 func (l Loader) servicePrefix() string {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
+	"github.com/OrbintSoft/sshakku/internal/giveup"
 	"github.com/OrbintSoft/sshakku/internal/keyring"
 	"github.com/OrbintSoft/sshakku/internal/keys"
 	"github.com/OrbintSoft/sshakku/internal/paths"
@@ -30,6 +31,12 @@ const agentLockWait = 5 * time.Second
 // expires and must be re-added from the vault. $SSHAKKU_KEY_LIFETIME overrides
 // it; a zero or negative value disables expiry.
 const defaultKeyLifetime = 8 * time.Hour
+
+// defaultGiveupTTL bounds how long a key stays in the give-up state after its
+// retries are exhausted, before a later shell tries it again.
+// $SSHAKKU_GIVEUP_TTL overrides it; a zero or negative value never expires (the
+// record then clears only on a successful add or when the runtime dir is wiped).
+const defaultGiveupTTL = time.Hour
 
 const usage = `sshakku — SSH agent and key shepherd
 
@@ -213,6 +220,18 @@ func loadKeys(stderr io.Writer) int {
 		_ = log.Log("ERROR", lerr.Error())
 	}
 
+	ttl, terr := giveupTTL(os.Getenv("SSHAKKU_GIVEUP_TTL"))
+	if terr != nil {
+		_ = log.Log("ERROR", terr.Error())
+	}
+	var giveupStore keys.GiveupStore
+	if !isTruthy(os.Getenv("SSHAKKU_NO_GIVEUP")) {
+		giveupStore = giveup.Store{
+			Dir: filepath.Join(filepath.Dir(layout.AgentSock), "giveup"),
+			TTL: ttl,
+		}
+	}
+
 	runner := keys.ExecRunner{}
 	prompter := keys.KDialogPrompter{Runner: runner}
 	guiEnv := keys.GUIEnv{
@@ -227,7 +246,11 @@ func loadKeys(stderr io.Writer) int {
 		Prompt: prompter,
 		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: lifetime},
 		Log:    log,
-		Config: keys.Config{GUI: keys.GUIAvailable(guiEnv, runner, prompter)},
+		Giveup: giveupStore,
+		Config: keys.Config{
+			GUI:         keys.GUIAvailable(guiEnv, runner, prompter),
+			MaxAttempts: envInt(os.Getenv("SSHAKKU_MAX_ATTEMPTS")),
+		},
 	}
 	if err := loader.LoadKeys(); err != nil {
 		_ = log.Log("ERROR", fmt.Sprintf("load-keys: %v", err))
@@ -254,6 +277,44 @@ func keyLifetime(raw string) (time.Duration, error) {
 		return 0, nil
 	}
 	return d, nil
+}
+
+// giveupTTL resolves the give-up TTL from $SSHAKKU_GIVEUP_TTL (a Go duration
+// such as "1h"), defaulting to defaultGiveupTTL. A zero or negative value means
+// "never expire"; a malformed value falls back to the default and is returned
+// with an error for the caller to log.
+func giveupTTL(raw string) (time.Duration, error) {
+	if raw == "" {
+		return defaultGiveupTTL, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultGiveupTTL, fmt.Errorf("invalid SSHAKKU_GIVEUP_TTL %q: %w", raw, err)
+	}
+	if d < 0 {
+		return 0, nil
+	}
+	return d, nil
+}
+
+// envInt parses a positive integer from raw, returning 0 (let the consumer use
+// its own default) for an empty, malformed, or non-positive value.
+func envInt(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 1 {
+		return 0
+	}
+	return n
+}
+
+// isTruthy reports whether raw is a recognised affirmative value, used for
+// boolean opt-out environment switches.
+func isTruthy(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,
