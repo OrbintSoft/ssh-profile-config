@@ -1,6 +1,9 @@
 package keys
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // fakeRunner answers Run from a per-binary handler table, so a test can stub
 // ssh-keygen, ssh-add, secret-tool, etc. independently and inspect the calls.
@@ -47,6 +50,94 @@ func (p *fakePrompter) Available() bool { return p.avail }
 func (p *fakePrompter) Prompt(keyname string) (string, error) {
 	p.calls = append(p.calls, keyname)
 	return p.pass, p.err
+}
+
+// fakeLister returns a fixed list of key paths (or an error).
+type fakeLister struct {
+	paths []string
+	err   error
+}
+
+func (l fakeLister) Keys() ([]string, error) { return l.paths, l.err }
+
+// fakeSecret is a scripted SecretBackend that records every Store.
+type fakeSecret struct {
+	lookupPass  string
+	lookupFound bool
+	lookupErr   error
+	storeErr    error
+	stored      []storeCall
+}
+
+type storeCall struct{ service, label, passphrase string }
+
+func (s *fakeSecret) Lookup(string) (string, bool, error) {
+	return s.lookupPass, s.lookupFound, s.lookupErr
+}
+
+func (s *fakeSecret) Store(service, label, passphrase string) error {
+	if s.storeErr != nil {
+		return s.storeErr
+	}
+	s.stored = append(s.stored, storeCall{service, label, passphrase})
+	return nil
+}
+
+// fakeKeyAdder records each add and returns scripted exit codes per call.
+type fakeKeyAdder struct {
+	withCodes []int // exit codes for successive AddWithAskpass calls
+	intCodes  []int // exit codes for successive AddInteractive calls
+	err       error
+	calls     []addCall
+}
+
+type addCall struct {
+	keyfile     string
+	passphrase  string
+	interactive bool
+}
+
+func (a *fakeKeyAdder) AddWithAskpass(keyfile, passphrase string) (int, error) {
+	a.calls = append(a.calls, addCall{keyfile: keyfile, passphrase: passphrase})
+	if a.err != nil {
+		return 0, a.err
+	}
+	return popCode(&a.withCodes), nil
+}
+
+func (a *fakeKeyAdder) AddInteractive(keyfile string) (int, error) {
+	a.calls = append(a.calls, addCall{keyfile: keyfile, interactive: true})
+	if a.err != nil {
+		return 0, a.err
+	}
+	return popCode(&a.intCodes), nil
+}
+
+// popCode returns and removes the first code, defaulting to 0 when exhausted.
+func popCode(codes *[]int) int {
+	if len(*codes) == 0 {
+		return 0
+	}
+	c := (*codes)[0]
+	*codes = (*codes)[1:]
+	return c
+}
+
+// fakeLogger records the level-tagged lines a Loader emits.
+type fakeLogger struct{ lines []string }
+
+func (f *fakeLogger) Log(level, message string) error {
+	f.lines = append(f.lines, level+" "+message)
+	return nil
+}
+
+func (f *fakeLogger) contains(sub string) bool {
+	for _, l := range f.lines {
+		if strings.Contains(l, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // fails builds a handler that reports a failure to start the process.
