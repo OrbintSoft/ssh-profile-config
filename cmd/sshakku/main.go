@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,11 +33,17 @@ usage: sshakku <command>
 commands:
   shell-init     drive the agent healthy and print shell assignments to eval
   ensure-agent   drive the agent to a healthy state and print agent_sock
-  askpass        print a key passphrase from the keyring (used as SSH_ASKPASS)
+  load-keys      add the user's ssh keys to the agent (interactive sessions)
   help           show this help
 `
 
 func main() {
+	// ssh-add execs this binary as its SSH_ASKPASS program, passing only the
+	// prompt as an argument and marking the call via the environment. Handle that
+	// before subcommand dispatch and return the passphrase from the keyring.
+	if os.Getenv(keys.EnvAskpassMode) != "" {
+		os.Exit(askpass(os.Stdout))
+	}
 	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
 }
 
@@ -52,8 +59,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return shellInit(stdout, stderr)
 	case "ensure-agent":
 		return ensureAgent(stdout, stderr)
-	case "askpass":
-		return askpass(stdout)
+	case "load-keys":
+		return loadKeys(stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -176,6 +183,60 @@ func tail(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// loadKeys adds the user's ~/.ssh keys to the agent: it skips keys already loaded
+// and, for the rest, pulls each passphrase from the secret store (or prompts) and
+// hands it to ssh-add out of band. The login entrypoint calls it only in
+// interactive shells. SSH_ASKPASS points at this very binary, which ssh-add re-execs
+// to fetch the passphrase from the keyring. The success path is silent; problems go
+// to the session log (and stderr for a hard failure).
+func loadKeys(stderr io.Writer) int {
+	env := paths.FromOS()
+	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
+	log := sessionlog.New(layout.LogFile)
+
+	self, err := os.Executable()
+	if err != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: locate self: %v", err))
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+
+	runner := keys.ExecRunner{}
+	prompter := keys.KDialogPrompter{Runner: runner}
+	guiEnv := keys.GUIEnv{
+		WaylandDisplay: os.Getenv("WAYLAND_DISPLAY"),
+		Display:        os.Getenv("DISPLAY"),
+	}
+
+	loader := keys.Loader{
+		Keys:   keys.Enumerator{Dir: filepath.Join(env.Home, ".ssh")},
+		Runner: runner,
+		Secret: keys.SecretToolBackend{Runner: runner, User: currentUser()},
+		Prompt: prompter,
+		Adder:  keys.ExecKeyAdder{AskpassProg: self},
+		Log:    log,
+		Config: keys.Config{GUI: keys.GUIAvailable(guiEnv, runner, prompter)},
+	}
+	if err := loader.LoadKeys(); err != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: %v", err))
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// currentUser returns the login name for the secret-store "username" attribute,
+// matching $USER so entries the earlier shell version stored are still found.
+func currentUser() string {
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return ""
 }
 
 // runEnsure drives the fixed socket to a healthy ssh-agent for the resolved

@@ -61,6 +61,7 @@ func (a ExecKeyAdder) AddWithAskpass(keyfile, passphrase string) (int, error) {
 	env := []string{
 		"SSH_ASKPASS=" + a.AskpassProg,
 		"SSH_ASKPASS_REQUIRE=force",
+		EnvAskpassMode + "=1",
 		EnvKeyctlSerial + "=" + strconv.Itoa(int(serial)),
 	}
 	env = passThrough(env, "PATH", "HOME", "USER", "DISPLAY", "WAYLAND_DISPLAY",

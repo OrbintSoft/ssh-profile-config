@@ -5,10 +5,17 @@
 // drives the OpenSSH tools and the secret store through the seams below.
 package keys
 
+// EnvAskpassMode marks an invocation as ssh-add's SSH_ASKPASS helper. The loader
+// sets it (to "1") in the ssh-add child environment and points SSH_ASKPASS at the
+// sshakku binary itself; the binary, seeing the marker, returns the passphrase
+// instead of dispatching a subcommand — ssh-add execs SSH_ASKPASS as a single
+// program with only the prompt as an argument, so a "sshakku askpass" command line
+// is not an option.
+const EnvAskpassMode = "SSHAKKU_ASKPASS"
+
 // EnvKeyctlSerial names the environment variable carrying the kernel-keyring
-// serial of a passphrase entry from the loader to `sshakku askpass`, which ssh-add
-// execs as its SSH_ASKPASS program. Only the serial — a handle — crosses the env;
-// the passphrase itself stays in the keyring.
+// serial of a passphrase entry from the loader to the askpass helper. Only the
+// serial — a handle — crosses the env; the passphrase itself stays in the keyring.
 const EnvKeyctlSerial = "SSHAKKU_KEYCTL_SERIAL"
 
 // Cmd describes one external command invocation. Env entries are appended to the
