@@ -463,14 +463,20 @@ is committable and the bash keeps working until each piece moves.
   `~/.ssh/agent` cleanup, and a bounded session log. `shell-init` prints
   `agent_sock`/`agent_lock`/`log_file`; the entrypoint evals them. The Go lint and
   `golang.org/x/sys` (BSD-3-Clause) licence decisions are recorded (rules 12, 16).
-- **Slice 2 — agent lifecycle** (the Phase 1.4 work, in Go): reachability plus the
-  five-state self-healing policy of open decision 15 — start on the fixed socket
-  when clean, attach when ours is healthy, reap dead sockets/agents (ours and dead
-  foreign ones), and adopt-by-symlink a healthy foreign agent while reporting the
-  anomaly. Never kill a healthy agent.
-- **Slice 3 — key loading + `askpass`**: key enumeration / fingerprint dedup,
-  secret lookup and prompt, and an `sshakku askpass` subcommand that retires
-  `ssh-ask-pass-linux.sh`.
+- **Slice 2 — agent lifecycle. ✅ Done.** (the Phase 1.4 work, in Go): reachability
+  plus the five-state self-healing policy of open decision 15 — start on the fixed
+  socket when clean, attach when ours is healthy, reap dead sockets/agents (ours and
+  dead foreign ones), and adopt-by-symlink a healthy foreign agent while reporting
+  the anomaly. Never kill a healthy agent. `internal/agent` (probe/inspect/manage/
+  ensure, flock-serialised); `shell-init` is the sole owner of the lifecycle.
+- **Slice 3 — key loading + `askpass`. ✅ Done.** `internal/keys` +
+  `internal/keyring`: enumerate `~/.ssh/id_*`, skip fingerprints already in the
+  agent (`ssh-keygen`/`ssh-add -l`), and add the rest via the secret store
+  (`secret-tool`) or a prompt (`kdialog`), handing each passphrase to ssh-add out of
+  band through the `@u` keyring (payload never in argv) + an SSH_ASKPASS helper
+  marked by `SSHAKKU_ASKPASS`. `sshakku load-keys` is driven from the login hook in
+  interactive shells; the bash askpass script is retired. GUI detection covers
+  Wayland and X11.
 - **Slice 4 — retries / give-up + key-expiry**: the original Phase 2 stateful
   logic; by here the bash is just the thin hook.
 
@@ -491,8 +497,7 @@ tool highly parametrizable via a config file. → goals 11, 15; open decision 7.
 
 ### Phase 5 — Widen the OS targets
 
-macOS as a thin port (it already caches passphrases natively — avoid
-over-engineering), then Windows last as the most divergent target (service + named
+macOS as a wide port, then Windows last as the most divergent target (service + named
 pipe, no socket). → goals 12, 13; open decision 8.
 
 ### Phase 6 — Full test matrix
