@@ -4,9 +4,6 @@ globs:
   - "**/*.md"
 # Honour .gitignore so scratch/working files (e.g. *-steps.md) are not linted.
 gitignore: true
-ignores:
-  # Throwaway triage doc; not worth conforming while it is short-lived.
-  - docs/DESIGN-NOTES.md
 config:
   default: true
   # Prose is hand-wrapped and tables/URLs legitimately exceed 80 columns.
