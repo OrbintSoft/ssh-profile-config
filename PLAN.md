@@ -43,10 +43,12 @@ still to be made.
 
 6. **Best-effort recovery.** An SSH session already started by something else is
    fine — at most we load the keys that are missing. If a socket is up but the
-   environment variables don't match, fix them as far as possible. (Note the hard
+   environment variables don't match, fix them as far as possible. A healthy agent
+   we did not start is adopted (via the fixed-socket symlink) and the anomaly is
+   reported — never killed; only dead sockets/agents are reaped. (Note the hard
    limit: a child process cannot rewrite the environment of an already-running
    parent such as the session/GUI; the fixed-socket approach is what makes this
-   robust.)
+   robust.) See open decision 15 for the full five-state policy.
 
 7. **No database — plain text files only. No secrets or otherwise sensitive
    information in logs.**
@@ -138,7 +140,9 @@ honoured) before or during the phases. Each notes the related goal.
    environment of an already-running parent (the session / GUI). "Fix mismatched
    env vars" can only fix the current shell and its descendants; already-open GUI
    apps are reachable only via the fixed socket path (plus a dangling-socket
-   symlink as a last resort). Don't promise more.
+   symlink as a last resort). Don't promise more. The same symlink is how a healthy
+   foreign agent is adopted (open decision 15): the fixed path points at the
+   foreign socket so the session's pinned `SSH_AUTH_SOCK` resolves to it.
 
 5. **Give-up state & opt-out (goal 4).** Bounded retries need a persistent text
    sentinel ("gave up on key X") with a defined reset (next login? time-based?) and
@@ -233,6 +237,45 @@ honoured) before or during the phases. Each notes the related goal.
     decision 12) resolves to `sshakku`. A short command alias `shak` is to be
     provided by the CLI when it lands. The GitHub repository and the Gentoo package
     are renamed to match.
+
+15. **Agent lifecycle: self-healing & foreign-agent adoption (goals 5, 6, 8).** At
+    shell-init the world is in one of five states; sshakku resolves them in
+    precedence order rather than only "never kill a healthy agent":
+
+    - **A — clean** (nothing reachable): reap any dead socket at our path, start
+      *our* agent on the fixed socket, load the keys.
+    - **B — ours healthy** (agent on our fixed socket): attach, load only the
+      missing keys (fingerprint dedup), stay silent.
+    - **C — ours zombie** (our socket/process dead, including the legacy
+      `~/.ssh/agent`): reap what is ours, restart on the fixed socket.
+    - **D — foreign healthy** (a reachable agent we did not start, env points
+      elsewhere): never spawn a competitor — adopt it and **report the anomaly**.
+    - **E — disaster** (mixed stale env, dead sockets, several agents): be
+      maximally resilient — use any healthy agent (ours first, then a foreign one
+      with a report), reap the dead, never leave the shell on a dead socket.
+
+    Identity: "ours" = the agent listening on our fixed socket (PID recorded in a
+    state file when we start it); "legacy-ours" = `ssh-agent -a ~/.ssh/agent/…`;
+    anything else is foreign. The hard limit of open decision 4 still holds — we fix
+    only the current shell and its descendants; already-open GUI apps are reached
+    only via the fixed-socket symlink.
+
+    **Decided (this discussion):**
+    - **Adopt a foreign healthy agent by symlink** (case D): point the fixed socket
+      at the foreign socket (`fixed → foreign`), keep `SSH_AUTH_SOCK` on the fixed
+      path, and load our keys into the foreign agent — accepting that this widens
+      the keys' blast radius, which is exactly why it is reported as an anomaly, not
+      the steady state. If the foreign agent dies the fixed path is left dangling
+      and handled like any other dead socket.
+    - **Reap dead foreign sockets/agents too**, not only ours — but *only the dead*
+      (no listener / unreachable process); a healthy foreign agent is never killed
+      (that is case D). Automatic reaping stays within the invoking user's
+      privileges (rule 18); deeper cleanup across users is the diagnostic tool's job
+      under `sudo`.
+
+    The reporting/attribution side — who started the foreign agent, and how to
+    return to the clean state where only we run the agent — is the diagnostic tool's
+    mandate (goal 8, Phase 3).
 
 ---
 
@@ -380,11 +423,13 @@ Sub-phases (detailed steps written when we start each one):
   (`sshakku shell-init`, Phase 2 slice 1), so the remaining 1.3 work is the
   silence / `set -u` hardening layered on top. → goal 3; open decision 3; threat
   I4; invariant 2.
-- **1.4 — Agent lifecycle & recovery.** Keep never-kill-a-healthy-agent (`ssh-add
-  -l` exit 0 and 1 both healthy), clean exit with no keys, opportunistic cleanup of
-  dangling sockets, and a last-resort dangling-socket symlink for already-open GUI
-  apps. **Now Go slice 2** (see the Phase 2 note): this lifecycle logic moves into
-  the Go core rather than staying in bash. → goals 5, 6; threats D1, D5.
+- **1.4 — Agent lifecycle & recovery.** The five-state self-healing policy (open
+  decision 15): never kill a healthy agent (`ssh-add -l` exit 0 and 1 both healthy),
+  clean exit with no keys, reap dead sockets/agents (ours and dead foreign ones),
+  adopt-by-symlink a healthy foreign agent with an anomaly report, and a last-resort
+  dangling-socket symlink for already-open GUI apps. **Now Go slice 2** (see the
+  Phase 2 note): this lifecycle logic moves into the Go core rather than staying in
+  bash. → goals 5, 6, 8; threats D1, D5.
 - **1.5 — Shell test harness (rule 12).** `bats` unit tests + container integration
   tests covering the plumbing scenarios (the DESIGN-NOTES §7 checklist: re-login,
   kill agent, empty wallet, reachable-but-empty). `bats` is a new file type —
@@ -418,8 +463,11 @@ is committable and the bash keeps working until each piece moves.
   `~/.ssh/agent` cleanup, and a bounded session log. `shell-init` prints
   `agent_sock`/`agent_lock`/`log_file`; the entrypoint evals them. The Go lint and
   `golang.org/x/sys` (BSD-3-Clause) licence decisions are recorded (rules 12, 16).
-- **Slice 2 — agent lifecycle** (the Phase 1.4 work, in Go): reachability, start
-  on the fixed socket, never-kill-a-healthy-agent, dangling-socket cleanup.
+- **Slice 2 — agent lifecycle** (the Phase 1.4 work, in Go): reachability plus the
+  five-state self-healing policy of open decision 15 — start on the fixed socket
+  when clean, attach when ours is healthy, reap dead sockets/agents (ours and dead
+  foreign ones), and adopt-by-symlink a healthy foreign agent while reporting the
+  anomaly. Never kill a healthy agent.
 - **Slice 3 — key loading + `askpass`**: key enumeration / fingerprint dedup,
   secret lookup and prompt, and an `sshakku askpass` subcommand that retires
   `ssh-ask-pass-linux.sh`.
@@ -430,8 +478,11 @@ is committable and the bash keeps working until each piece moves.
 
 The currently-missing diagnostic that reports who started the agent, why it isn't
 working, and which processes are involved — runnable under `sudo` for the full
-picture. Now lands after the Go core, so it is built in Go reusing the core's
-inspection primitives rather than as throwaway bash. → goal 8; threat E1.
+picture. It attributes a foreign agent (open decision 15, case D) to the process or
+tool that started it, and guides — or applies — the fix back to the clean state in
+which only sshakku runs the agent. Now lands after the Go core, so it is built in Go
+reusing the core's inspection primitives rather than as throwaway bash. → goal 8;
+threat E1.
 
 ### Phase 4 — Configurability & pluggable secret backends
 
