@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+// TestRun exercises argument dispatch only. shell-init and ensure-agent are
+// omitted: both now drive the real agent lifecycle (start, reap, adopt), so
+// invoking them here would spawn and reap agents on the test host; that logic is
+// covered by the agent package's tests.
 func TestRun(t *testing.T) {
 	tests := []struct {
 		name string
@@ -15,7 +19,6 @@ func TestRun(t *testing.T) {
 		{"help", []string{"help"}, 0},
 		{"help flag", []string{"--help"}, 0},
 		{"unknown command", []string{"bogus"}, 2},
-		{"shell-init", []string{"shell-init"}, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

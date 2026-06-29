@@ -11,18 +11,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
 	"github.com/OrbintSoft/sshakku/internal/paths"
 	"github.com/OrbintSoft/sshakku/internal/sessionlog"
 )
 
+// agentLockWait bounds how long a login blocks for the start lock before it
+// proceeds without it, so a stuck holder slows the login but never hangs it.
+const agentLockWait = 5 * time.Second
+
 const usage = `sshakku — SSH agent and key shepherd
 
 usage: sshakku <command>
 
 commands:
-  shell-init     print shell assignments for the login entrypoint to eval
+  shell-init     drive the agent healthy and print shell assignments to eval
   ensure-agent   drive the agent to a healthy state and print agent_sock
   help           show this help
 `
@@ -52,15 +57,17 @@ func run(stdout, stderr io.Writer, args []string) int {
 	}
 }
 
-// shellInit resolves and creates the per-user runtime layout, then prints it as
-// shell assignments for the login entrypoint to eval:
+// shellInit resolves and creates the per-user runtime layout, drives the fixed
+// socket to a healthy ssh-agent, then prints the result as shell assignments for
+// the login entrypoint to eval:
 //
 //	agent_sock='…'
 //	agent_lock='…'
 //	log_file='…'
 //
-// Only these assignments go to stdout; diagnostics go to stderr. The keyring
-// token (a socket-path component) is added in a following sub-step.
+// agent_sock is the live socket EnsureAgent settled on, which may be an adopted
+// agent rather than the fixed path. Only these assignments go to stdout;
+// diagnostics and anomalies go to stderr and the session log.
 func shellInit(stdout, stderr io.Writer) int {
 	env := paths.FromOS()
 	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
@@ -72,8 +79,13 @@ func shellInit(stdout, stderr io.Writer) int {
 	}
 	paths.CleanupLegacyAgentDir(env.Home)
 
+	liveSock, code := runEnsure(stderr, env, layout)
+	if code != 0 {
+		return code
+	}
+
 	assignments := []struct{ name, value string }{
-		{"agent_sock", layout.AgentSock},
+		{"agent_sock", liveSock},
 		{"agent_lock", layout.AgentLock},
 		{"log_file", layout.LogFile},
 	}
@@ -92,9 +104,8 @@ func shellInit(stdout, stderr io.Writer) int {
 //
 //	agent_sock='…'
 //
-// Anomalies (an adopted foreign agent) and errors go to stderr and the session
-// log. This command is a parallel entry point for exercising the lifecycle; the
-// login path keeps using shell-init until the cutover.
+// It is a standalone entry point for exercising the lifecycle; the login path
+// reaches the same logic through shell-init, which adds the other assignments.
 func ensureAgent(stdout, stderr io.Writer) int {
 	env := paths.FromOS()
 	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
@@ -102,18 +113,38 @@ func ensureAgent(stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
 		return 1
 	}
-	log := sessionlog.New(layout.LogFile)
 
+	liveSock, code := runEnsure(stderr, env, layout)
+	if code != 0 {
+		return code
+	}
+	if _, err := fmt.Fprintf(stdout, "agent_sock=%s\n", shellSingleQuote(liveSock)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// runEnsure drives the fixed socket to a healthy ssh-agent for the resolved
+// layout, serialising concurrent logins on the start lock and reporting
+// anomalies and errors to stderr and the session log. It returns the live socket
+// to expose and a process exit code (0 on success). shell-init and ensure-agent
+// share it so the login path and the standalone command drive the agent
+// identically; each caller prints the assignments it needs.
+func runEnsure(stderr io.Writer, env paths.Env, layout paths.Layout) (string, int) {
+	log := sessionlog.New(layout.LogFile)
 	m := agent.Manager{
 		Prober:    agent.SocketProber{},
 		Inspector: agent.Inspector{},
 		Runner:    agent.ExecRunner{},
 		Signaler:  agent.SysSignaler{},
+		Locker:    agent.FlockLocker{Wait: agentLockWait},
 	}
 	cfg := agent.EnsureConfig{
 		FixedSock: layout.AgentSock,
 		LegacyDir: filepath.Join(env.Home, ".ssh", "agent"),
 		StatePath: filepath.Join(filepath.Dir(layout.AgentSock), "agent.state"),
+		LockPath:  layout.AgentLock,
 		OurUID:    env.UID,
 	}
 
@@ -121,16 +152,12 @@ func ensureAgent(stdout, stderr io.Writer) int {
 	if err != nil {
 		_ = log.Log("ERROR", fmt.Sprintf("ensure-agent: %v", err))
 		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
-		return 1
+		return "", 1
 	}
 	if res.Anomaly != "" {
 		_, _ = fmt.Fprintf(stderr, "sshakku: %s\n", res.Anomaly)
 	}
-	if _, err := fmt.Fprintf(stdout, "agent_sock=%s\n", shellSingleQuote(res.LiveSock)); err != nil {
-		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
-		return 1
-	}
-	return 0
+	return res.LiveSock, 0
 }
 
 // shellSingleQuote wraps s in single quotes safe for POSIX shell eval, so paths
