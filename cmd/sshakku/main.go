@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
+	"github.com/OrbintSoft/sshakku/internal/config"
 	"github.com/OrbintSoft/sshakku/internal/giveup"
 	"github.com/OrbintSoft/sshakku/internal/keyring"
 	"github.com/OrbintSoft/sshakku/internal/keys"
@@ -26,17 +27,6 @@ import (
 // agentLockWait bounds how long a login blocks for the start lock before it
 // proceeds without it, so a stuck holder slows the login but never hangs it.
 const agentLockWait = 5 * time.Second
-
-// defaultKeyLifetime caps how long an added key stays in the agent before it
-// expires and must be re-added from the vault. $SSHAKKU_KEY_LIFETIME overrides
-// it; a zero or negative value disables expiry.
-const defaultKeyLifetime = 8 * time.Hour
-
-// defaultGiveupTTL bounds how long a key stays in the give-up state after its
-// retries are exhausted, before a later shell tries it again.
-// $SSHAKKU_GIVEUP_TTL overrides it; a zero or negative value never expires (the
-// record then clears only on a successful add or when the runtime dir is wiped).
-const defaultGiveupTTL = time.Hour
 
 const usage = `sshakku — SSH agent and key shepherd
 
@@ -250,17 +240,17 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 
-	lifetime, lerr := keyLifetime(os.Getenv("SSHAKKU_KEY_LIFETIME"))
+	lifetime, lerr := config.KeyLifetime(os.Getenv("SSHAKKU_KEY_LIFETIME"))
 	if lerr != nil {
 		_ = log.Log("ERROR", lerr.Error())
 	}
 
-	ttl, terr := giveupTTL(os.Getenv("SSHAKKU_GIVEUP_TTL"))
+	ttl, terr := config.GiveupTTL(os.Getenv("SSHAKKU_GIVEUP_TTL"))
 	if terr != nil {
 		_ = log.Log("ERROR", terr.Error())
 	}
 	var giveupStore keys.GiveupStore
-	if !isTruthy(os.Getenv("SSHAKKU_NO_GIVEUP")) {
+	if !config.IsTruthy(os.Getenv("SSHAKKU_NO_GIVEUP")) {
 		giveupStore = giveup.Store{
 			Dir: filepath.Join(filepath.Dir(layout.AgentSock), "giveup"),
 			TTL: ttl,
@@ -268,7 +258,7 @@ func loadKeys(stderr io.Writer) int {
 	}
 
 	var notifier keys.Notifier
-	if !isTruthy(os.Getenv("SSHAKKU_QUIET")) {
+	if !config.IsTruthy(os.Getenv("SSHAKKU_QUIET")) {
 		notifier = stderrNotifier{w: stderr}
 	}
 
@@ -290,7 +280,7 @@ func loadKeys(stderr io.Writer) int {
 		Giveup: giveupStore,
 		Config: keys.Config{
 			GUI:         keys.GUIAvailable(guiEnv, runner, prompter),
-			MaxAttempts: envInt(os.Getenv("SSHAKKU_MAX_ATTEMPTS")),
+			MaxAttempts: config.EnvInt(os.Getenv("SSHAKKU_MAX_ATTEMPTS")),
 		},
 	}
 	if err := loader.LoadKeys(); err != nil {
@@ -299,63 +289,6 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 	return 0
-}
-
-// keyLifetime resolves the agent key lifetime from $SSHAKKU_KEY_LIFETIME (a Go
-// duration such as "1h" or "20m"), defaulting to defaultKeyLifetime. A zero or
-// negative value disables expiry (the key stays until the agent does); a
-// malformed value falls back to the default and is returned with an error for
-// the caller to log.
-func keyLifetime(raw string) (time.Duration, error) {
-	if raw == "" {
-		return defaultKeyLifetime, nil
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return defaultKeyLifetime, fmt.Errorf("invalid SSHAKKU_KEY_LIFETIME %q: %w", raw, err)
-	}
-	if d < 0 {
-		return 0, nil
-	}
-	return d, nil
-}
-
-// giveupTTL resolves the give-up TTL from $SSHAKKU_GIVEUP_TTL (a Go duration
-// such as "1h"), defaulting to defaultGiveupTTL. A zero or negative value means
-// "never expire"; a malformed value falls back to the default and is returned
-// with an error for the caller to log.
-func giveupTTL(raw string) (time.Duration, error) {
-	if raw == "" {
-		return defaultGiveupTTL, nil
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return defaultGiveupTTL, fmt.Errorf("invalid SSHAKKU_GIVEUP_TTL %q: %w", raw, err)
-	}
-	if d < 0 {
-		return 0, nil
-	}
-	return d, nil
-}
-
-// envInt parses a positive integer from raw, returning 0 (let the consumer use
-// its own default) for an empty, malformed, or non-positive value.
-func envInt(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 1 {
-		return 0
-	}
-	return n
-}
-
-// isTruthy reports whether raw is a recognised affirmative value, used for
-// boolean opt-out environment switches.
-func isTruthy(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 // stderrNotifier surfaces a user-facing notice to the terminal of the
