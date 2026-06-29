@@ -53,6 +53,7 @@ type EnsureConfig struct {
 	FixedSock string // the socket we pin our agent to and expose to the shell
 	LegacyDir string // pre-sshakku agents live under here (~/.ssh/agent)
 	StatePath string // where we record the agent we start
+	LockPath  string // lock file serialising the mutate path across logins
 	OurUID    int    // our real uid; gates same-user reaping
 }
 
@@ -78,13 +79,28 @@ func (m Manager) EnsureAgent(cfg EnsureConfig, log Logger) (EnsureResult, error)
 		}
 	}
 
-	// Ours is already healthy on the fixed socket: attach and go, silently.
+	// Ours is already healthy on the fixed socket: attach and go, silently. This
+	// fast path runs before the lock, so the common login is never serialised.
 	if m.Prober.Reachable(cfg.FixedSock) {
 		return EnsureResult{Situation: SituationHealthy, LiveSock: cfg.FixedSock}, nil
 	}
 
-	// The fixed socket is silent. Clear the dead agents we are allowed to, then
-	// survey which healthy agents remain.
+	// The fixed socket is silent and we are about to mutate the landscape, so
+	// serialise against other logins starting at the same moment. Re-check under
+	// the lock: another shell may have started ours while we waited.
+	if m.Locker != nil && cfg.LockPath != "" {
+		unlock, err := m.Locker.Lock(cfg.LockPath)
+		if err != nil {
+			return EnsureResult{}, fmt.Errorf("acquire agent lock: %w", err)
+		}
+		defer unlock()
+		if m.Prober.Reachable(cfg.FixedSock) {
+			return EnsureResult{Situation: SituationHealthy, LiveSock: cfg.FixedSock}, nil
+		}
+	}
+
+	// Clear the dead agents we are allowed to, then survey which healthy agents
+	// remain.
 	reap, err := m.Reap(cfg.OurUID)
 	if err != nil {
 		return EnsureResult{}, fmt.Errorf("reap dead agents: %w", err)

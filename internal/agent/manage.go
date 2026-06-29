@@ -21,6 +21,14 @@ type Signaler interface {
 	Terminate(pid int) error
 }
 
+// Locker serialises the mutate path of EnsureAgent across concurrent logins. Lock
+// blocks, up to an implementation-defined bound, until it holds the named lock and
+// returns a function that releases it. It abstracts flock so the lifecycle can be
+// tested without real file locks.
+type Locker interface {
+	Lock(path string) (unlock func(), err error)
+}
+
 // Manager owns the ssh-agent lifecycle: start one on the fixed socket, and reap
 // dead agents and their stale sockets. It never reimplements the agent.
 type Manager struct {
@@ -28,6 +36,7 @@ type Manager struct {
 	Inspector Inspector
 	Runner    Runner
 	Signaler  Signaler
+	Locker    Locker // serialises the mutate path; nil disables locking
 }
 
 // State is what we persist about the agent we started, so a later run can

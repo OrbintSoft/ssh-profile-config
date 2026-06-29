@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,27 @@ func (f *fakeLogger) hasLevel(level string) bool {
 		}
 	}
 	return false
+}
+
+// fakeLocker records the lock path and release calls. onLock, if set, runs while
+// the lock is held — before the under-lock re-check — so a test can make the fixed
+// socket appear healthy at that moment, as a concurrent login would.
+type fakeLocker struct {
+	locked   []string
+	unlocked int
+	err      error
+	onLock   func()
+}
+
+func (f *fakeLocker) Lock(path string) (func(), error) {
+	f.locked = append(f.locked, path)
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.onLock != nil {
+		f.onLock()
+	}
+	return func() { f.unlocked++ }, nil
 }
 
 func TestEnsureAgentHealthy(t *testing.T) {
@@ -238,6 +260,98 @@ func TestClearStalePath(t *testing.T) {
 	clearStalePath(reg)
 	if _, err := os.Lstat(reg); err != nil {
 		t.Errorf("regular file must survive clearStalePath, err = %v", err)
+	}
+}
+
+func TestEnsureAgentFastPathSkipsLock(t *testing.T) {
+	dir := t.TempDir()
+	fixed := filepath.Join(dir, "agent.sock")
+	lk := &fakeLocker{}
+
+	m := Manager{Prober: mapProber{fixed: true}, Runner: &recordRunner{}, Signaler: &recordSignaler{}, Locker: lk}
+	res, err := m.EnsureAgent(EnsureConfig{FixedSock: fixed, LockPath: filepath.Join(dir, "lock"), OurUID: 1000}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Situation != SituationHealthy {
+		t.Fatalf("situation = %v, want healthy", res.Situation)
+	}
+	if len(lk.locked) != 0 {
+		t.Errorf("the healthy fast path must not lock, locked %v", lk.locked)
+	}
+}
+
+func TestEnsureAgentLocksMutatePath(t *testing.T) {
+	dir := t.TempDir()
+	fixed := filepath.Join(dir, "agent.sock")
+	lock := filepath.Join(dir, "agent.lock")
+	runner := &recordRunner{pid: 4242}
+	lk := &fakeLocker{}
+
+	m := Manager{
+		Prober:    mapProber{}, // silent
+		Inspector: Inspector{ProcRoot: t.TempDir()},
+		Runner:    runner,
+		Signaler:  &recordSignaler{},
+		Locker:    lk,
+	}
+	res, err := m.EnsureAgent(EnsureConfig{FixedSock: fixed, StatePath: filepath.Join(dir, "st"), LockPath: lock, OurUID: 1000}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Situation != SituationClean || runner.started != fixed {
+		t.Fatalf("got %+v, started %q; want a clean start", res, runner.started)
+	}
+	if len(lk.locked) != 1 || lk.locked[0] != lock {
+		t.Errorf("locked %v, want a single lock on %q", lk.locked, lock)
+	}
+	if lk.unlocked != 1 {
+		t.Errorf("unlocked %d times, want exactly 1 (deferred release)", lk.unlocked)
+	}
+}
+
+func TestEnsureAgentDoubleCheckUnderLock(t *testing.T) {
+	dir := t.TempDir()
+	fixed := filepath.Join(dir, "agent.sock")
+	runner := &recordRunner{pid: 1}
+	sig := &recordSignaler{}
+	prober := mapProber{} // silent on the first check
+
+	// A concurrent login starts ours while we hold the lock: the under-lock
+	// re-check must then find it healthy and neither reap nor start.
+	lk := &fakeLocker{onLock: func() { prober[fixed] = true }}
+	m := Manager{Prober: prober, Inspector: Inspector{ProcRoot: t.TempDir()}, Runner: runner, Signaler: sig, Locker: lk}
+
+	res, err := m.EnsureAgent(EnsureConfig{FixedSock: fixed, StatePath: filepath.Join(dir, "st"), LockPath: filepath.Join(dir, "lock"), OurUID: 1000}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Situation != SituationHealthy || res.LiveSock != fixed {
+		t.Fatalf("got %+v, want healthy after the under-lock re-check", res)
+	}
+	if runner.started != "" {
+		t.Errorf("re-check found ours healthy; must not start, started %q", runner.started)
+	}
+	if len(sig.killed) != 0 {
+		t.Errorf("re-check found ours healthy; must not reap, killed %v", sig.killed)
+	}
+	if lk.unlocked != 1 {
+		t.Errorf("the lock must be released even on the healthy re-check, unlocked %d", lk.unlocked)
+	}
+}
+
+func TestEnsureAgentLockError(t *testing.T) {
+	dir := t.TempDir()
+	fixed := filepath.Join(dir, "agent.sock")
+	runner := &recordRunner{pid: 1}
+	lk := &fakeLocker{err: errors.New("cannot open lock")}
+
+	m := Manager{Prober: mapProber{}, Inspector: Inspector{ProcRoot: t.TempDir()}, Runner: runner, Signaler: &recordSignaler{}, Locker: lk}
+	if _, err := m.EnsureAgent(EnsureConfig{FixedSock: fixed, LockPath: filepath.Join(dir, "lock"), OurUID: 1000}, nil); err == nil {
+		t.Fatal("want an error when the lock cannot be acquired")
+	}
+	if runner.started != "" {
+		t.Errorf("must not start after a lock failure, started %q", runner.started)
 	}
 }
 
