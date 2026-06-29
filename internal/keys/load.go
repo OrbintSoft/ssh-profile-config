@@ -245,8 +245,7 @@ func (l Loader) failPrompt(keyname string, err error) {
 // storePassphrase saves a freshly prompted passphrase after a successful add.
 // Storing is best-effort: the key is already in the agent if this fails.
 func (l Loader) storePassphrase(service, keyname, passphrase string) {
-	label := "SSH Passphrase for " + keyname
-	if err := l.Secret.Store(service, label, passphrase); err != nil {
+	if err := storeInWallet(l.Secret, service, keyname, passphrase); err != nil {
 		l.logf("ERROR", "store passphrase for %s: %v", keyname, err)
 		return
 	}
@@ -280,10 +279,7 @@ func (l Loader) clearGiveup(keyname string) {
 }
 
 func (l Loader) servicePrefix() string {
-	if l.Config.ServicePrefix != "" {
-		return l.Config.ServicePrefix
-	}
-	return defaultServicePrefix
+	return servicePrefixOf(l.Config)
 }
 
 func (l Loader) logf(level, format string, args ...any) {

@@ -54,7 +54,7 @@ func main() {
 	// prompt as an argument and marking the call via the environment. Handle that
 	// before subcommand dispatch and return the passphrase from the keyring.
 	if os.Getenv(keys.EnvAskpassMode) != "" {
-		os.Exit(askpass(os.Stdout))
+		os.Exit(askpass(os.Stdout, os.Args[1:]))
 	}
 	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
 }
@@ -150,13 +150,45 @@ func ensureAgent(stdout, stderr io.Writer) int {
 	return 0
 }
 
-// askpass is the SSH_ASKPASS program ssh-add execs while adding a key: it reads
-// the passphrase the loader stashed in the @u keyring, identified by the serial in
-// $SSHAKKU_KEYCTL_SERIAL, prints it on stdout for ssh-add, and unlinks the
-// one-shot entry. The passphrase never touches stderr or argv; only the keyring
-// serial crosses the environment. Diagnostics go to the session log alone, so the
-// success path stays silent.
-func askpass(stdout io.Writer) int {
+// askpass answers an SSH_ASKPASS request. The proactive key-loading path stashes
+// the passphrase in the @u keyring and points us at it via $SSHAKKU_KEYCTL_SERIAL;
+// with a serial we serve that one-shot stash. Without one we are the reactive
+// broker for an interactive ssh whose key has expired, and answer the prompt in
+// args from the wallet (or the terminal).
+func askpass(stdout io.Writer, args []string) int {
+	if os.Getenv(keys.EnvKeyctlSerial) != "" {
+		return askpassFromKeyring(stdout)
+	}
+	return askpassBroker(stdout, args)
+}
+
+// askpassBroker answers ssh's passphrase or confirmation prompt: a key passphrase
+// comes from the wallet (or the terminal on a miss), other prompts pass through to
+// the terminal. Only the reply goes to stdout; diagnostics go to the session log.
+func askpassBroker(stdout io.Writer, args []string) int {
+	log := sessionlog.New(paths.Resolve(paths.FromOS(), paths.ProbeDir).LogFile)
+	broker := keys.Broker{
+		Secret: keys.SecretToolBackend{Runner: keys.ExecRunner{}, User: currentUser()},
+		TTY:    ttyPrompter{},
+		Log:    log,
+	}
+	reply, ok := broker.Answer(strings.Join(args, " "))
+	if !ok {
+		return 1
+	}
+	if _, err := fmt.Fprintf(stdout, "%s\n", reply); err != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("askpass: write reply: %v", err))
+		return 1
+	}
+	return 0
+}
+
+// askpassFromKeyring reads the passphrase the loader stashed in the @u keyring,
+// identified by the serial in $SSHAKKU_KEYCTL_SERIAL, prints it on stdout for
+// ssh-add, and unlinks the one-shot entry. The passphrase never touches stderr or
+// argv; only the keyring serial crosses the environment. Diagnostics go to the
+// session log alone, so the success path stays silent.
+func askpassFromKeyring(stdout io.Writer) int {
 	log := sessionlog.New(paths.Resolve(paths.FromOS(), paths.ProbeDir).LogFile)
 
 	raw := os.Getenv(keys.EnvKeyctlSerial)
