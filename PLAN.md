@@ -404,6 +404,7 @@ Per-file-type lint decisions (rule 12):
 | All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim, the deferred `*.zsh`, and `*.go` — gofmt owns Go formatting and legitimately allows spaces inside string literals; `.gitignore` is honoured) |
 | Shell — bats tests (`*.bats`) | Deferred to Phase 1.5 when test files enter the repo |
 | Go (`*.go`) | `gofmt -l` + `go vet ./...` + `golangci-lint` (config `.golangci.yml`, standard set); compiled by `make build`. Wired into `make lint` as `lint-go` and installed in CI (pinned). License (rule 16): the Go toolchain, its standard library (BSD-3-Clause) and `golangci-lint` are EUPL-1.2 compatible and don't obstruct relicensing — build/dev tools follow the 0.3 precedent (no bundled obligations); the third-party module list (`golang.org/x/sys`, BSD-3-Clause) is recorded in `COPYRIGHT.md`. |
+| TOML (`*.toml`) | `taplo lint` + `taplo format --check`, wired into `make lint` as `lint-toml` and installed in CI (pinned `@taplo/cli`); config `.taplo.toml` excludes only the deliberately malformed test fixture (the parser's error path, covered by Go tests). License (rule 16): the runtime parser `github.com/BurntSushi/toml` (MIT) is EUPL-1.2 compatible and doesn't obstruct relicensing, recorded in `COPYRIGHT.md`; `taplo` is a CI-only dev tool (0.3 precedent). |
 
 ### Phase 1 — Harden the primary target: shell plumbing (still bash)
 

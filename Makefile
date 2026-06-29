@@ -53,11 +53,12 @@ print-paths:
 	@echo "SSHAKKU_RUNTIME_PATH: $(SSHAKKU_RUNTIME_PATH)"
 	@echo "SSH_INIT_INSTALL_PATH: $(SSH_INIT_INSTALL_PATH)"
 
-# Linting. Requires: shellcheck, shfmt, markdownlint-cli2, checkmake, actionlint,
-# editorconfig-checker. Each tool reads its own config file where it has one.
+# Linting. Requires: shellcheck, shfmt, markdownlint-cli2, taplo, checkmake,
+# actionlint, editorconfig-checker. Each tool reads its own config file where it
+# has one.
 SH_SCRIPTS = $(wildcard *.sh) $(wildcard .githooks/*)
 
-lint: lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
+lint: lint-sh lint-md lint-toml lint-make lint-yaml lint-editorconfig lint-go
 
 lint-sh:
 	shellcheck $(SH_SCRIPTS)
@@ -65,6 +66,10 @@ lint-sh:
 
 lint-md:
 	markdownlint-cli2
+
+lint-toml:
+	taplo lint
+	taplo format --check
 
 lint-make:
 	checkmake --config=checkmake.ini Makefile
@@ -80,5 +85,5 @@ lint-go:
 	$(GO) vet ./...
 	golangci-lint run
 
-.PHONY: install uninstall build print-paths lint lint-sh lint-md lint-make lint-yaml lint-editorconfig lint-go
+.PHONY: install uninstall build print-paths lint lint-sh lint-md lint-toml lint-make lint-yaml lint-editorconfig lint-go
 .DEFAULT_GOAL := install

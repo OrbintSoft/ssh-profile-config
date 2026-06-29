@@ -1,6 +1,7 @@
 // Package config resolves SSHakku's tunable settings — key lifetime, retry,
-// give-up, and notification behaviour. Each setting is read from an environment
-// variable; a value the caller cannot parse falls back to a built-in default.
+// give-up, and notification behaviour. A setting is taken from its environment
+// variable when set, otherwise from the TOML config file, otherwise from a
+// built-in default.
 package config
 
 import (
