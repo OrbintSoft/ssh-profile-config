@@ -10,10 +10,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
+	"github.com/OrbintSoft/sshakku/internal/keyring"
+	"github.com/OrbintSoft/sshakku/internal/keys"
 	"github.com/OrbintSoft/sshakku/internal/paths"
 	"github.com/OrbintSoft/sshakku/internal/sessionlog"
 )
@@ -29,6 +32,7 @@ usage: sshakku <command>
 commands:
   shell-init     drive the agent healthy and print shell assignments to eval
   ensure-agent   drive the agent to a healthy state and print agent_sock
+  askpass        print a key passphrase from the keyring (used as SSH_ASKPASS)
   help           show this help
 `
 
@@ -48,6 +52,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return shellInit(stdout, stderr)
 	case "ensure-agent":
 		return ensureAgent(stdout, stderr)
+	case "askpass":
+		return askpass(stdout)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -123,6 +129,53 @@ func ensureAgent(stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// askpass is the SSH_ASKPASS program ssh-add execs while adding a key: it reads
+// the passphrase the loader stashed in the @u keyring, identified by the serial in
+// $SSHAKKU_KEYCTL_SERIAL, prints it on stdout for ssh-add, and unlinks the
+// one-shot entry. The passphrase never touches stderr or argv; only the keyring
+// serial crosses the environment. Diagnostics go to the session log alone, so the
+// success path stays silent.
+func askpass(stdout io.Writer) int {
+	log := sessionlog.New(paths.Resolve(paths.FromOS(), paths.ProbeDir).LogFile)
+
+	raw := os.Getenv(keys.EnvKeyctlSerial)
+	serial, err := strconv.Atoi(raw)
+	if err != nil {
+		_ = log.Log("ERROR", "askpass: missing or malformed keyctl serial")
+		return 1
+	}
+
+	pass, readErr := keyring.Read(keyring.Serial(serial))
+	// One-shot: drop the entry whether or not the read succeeded, so a leaked
+	// passphrase cannot linger in the keyring.
+	_ = keyring.Unlink(keyring.Serial(serial))
+	if readErr != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("askpass: read keyring serial …%s: %v", tail(raw, 3), readErr))
+		return 1
+	}
+	if len(pass) == 0 {
+		_ = log.Log("ERROR", fmt.Sprintf("askpass: empty passphrase for serial …%s", tail(raw, 3)))
+		return 1
+	}
+
+	// ssh-add reads the passphrase from stdout and strips the trailing newline.
+	if _, err := fmt.Fprintf(stdout, "%s\n", pass); err != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("askpass: write passphrase: %v", err))
+		return 1
+	}
+	_ = log.Log("INFO", fmt.Sprintf("askpass: provided passphrase for serial …%s", tail(raw, 3)))
+	return 0
+}
+
+// tail returns the last n characters of s, for logging a key serial without
+// recording it in full.
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }
 
 // runEnsure drives the fixed socket to a healthy ssh-agent for the resolved
