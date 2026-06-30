@@ -240,25 +240,34 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 
-	lifetime, lerr := config.KeyLifetime(os.Getenv("SSHAKKU_KEY_LIFETIME"))
-	if lerr != nil {
-		_ = log.Log("ERROR", lerr.Error())
+	// Settings come from the environment, the TOML config file, and built-in
+	// defaults, in that order of precedence. A missing file is fine; a path,
+	// load, or parse problem is logged and the affected setting falls back to
+	// its default.
+	var file config.File
+	if path, perr := config.DefaultPath(); perr != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: config path: %v", perr))
+	} else if f, lerr := config.Load(path); lerr != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: config %s: %v", path, lerr))
+		file = f
+	} else {
+		file = f
+	}
+	settings, errs := config.Resolve(file, os.LookupEnv)
+	for _, e := range errs {
+		_ = log.Log("ERROR", e.Error())
 	}
 
-	ttl, terr := config.GiveupTTL(os.Getenv("SSHAKKU_GIVEUP_TTL"))
-	if terr != nil {
-		_ = log.Log("ERROR", terr.Error())
-	}
 	var giveupStore keys.GiveupStore
-	if !config.IsTruthy(os.Getenv("SSHAKKU_NO_GIVEUP")) {
+	if !settings.NoGiveup {
 		giveupStore = giveup.Store{
 			Dir: filepath.Join(filepath.Dir(layout.AgentSock), "giveup"),
-			TTL: ttl,
+			TTL: settings.GiveupTTL,
 		}
 	}
 
 	var notifier keys.Notifier
-	if !config.IsTruthy(os.Getenv("SSHAKKU_QUIET")) {
+	if !settings.Quiet {
 		notifier = stderrNotifier{w: stderr}
 	}
 
@@ -274,13 +283,13 @@ func loadKeys(stderr io.Writer) int {
 		Runner: runner,
 		Secret: keys.SecretToolBackend{Runner: runner, User: currentUser()},
 		Prompt: prompter,
-		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: lifetime},
+		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: settings.KeyLifetime},
 		Log:    log,
 		Notify: notifier,
 		Giveup: giveupStore,
 		Config: keys.Config{
 			GUI:         keys.GUIAvailable(guiEnv, runner, prompter),
-			MaxAttempts: config.EnvInt(os.Getenv("SSHAKKU_MAX_ATTEMPTS")),
+			MaxAttempts: settings.MaxAttempts,
 		},
 	}
 	if err := loader.LoadKeys(); err != nil {
