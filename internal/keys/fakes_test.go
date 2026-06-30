@@ -144,3 +144,32 @@ func (f *fakeLogger) contains(sub string) bool {
 func fails(err error) func(Cmd) (Result, error) {
 	return func(Cmd) (Result, error) { return Result{}, err }
 }
+
+// fakeGiveup is an in-memory GiveupStore that scripts GivenUp and records the
+// keys passed to Record and Clear.
+type fakeGiveup struct {
+	given    map[string]bool
+	recorded []string
+	cleared  []string
+}
+
+func newFakeGiveup() *fakeGiveup { return &fakeGiveup{given: map[string]bool{}} }
+
+func (g *fakeGiveup) GivenUp(key string) bool { return g.given[key] }
+
+func (g *fakeGiveup) Record(key string) error {
+	g.recorded = append(g.recorded, key)
+	g.given[key] = true
+	return nil
+}
+
+func (g *fakeGiveup) Clear(key string) error {
+	g.cleared = append(g.cleared, key)
+	delete(g.given, key)
+	return nil
+}
+
+// fakeNotifier records the user-facing notices a Loader emits.
+type fakeNotifier struct{ msgs []string }
+
+func (n *fakeNotifier) Notify(message string) { n.msgs = append(n.msgs, message) }

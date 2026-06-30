@@ -24,11 +24,13 @@ Compiled into the distributed binary:
 
 - **Go standard library** — BSD-3-Clause.
 - **golang.org/x/sys** — BSD-3-Clause (Linux kernel keyring and syscall access).
+- **github.com/BurntSushi/toml** — MIT (parsing the TOML config file).
 
-Both are BSD-3-Clause: compatible with the EUPL 1.2 and with offering the project
-under additional licences, so they do not obstruct relicensing. Build- and
-CI-only tools (the Go toolchain and the linters) run as separate processes, are
-neither bundled nor distributed, and impose no terms on the software.
+These permissive licences (BSD-3-Clause and MIT) are compatible with the EUPL 1.2
+and with offering the project under additional licences, so they do not obstruct
+relicensing. Build- and CI-only tools (the Go toolchain and the linters) run as
+separate processes, are neither bundled nor distributed, and impose no terms on
+the software.
 
 ## Relicensing
 

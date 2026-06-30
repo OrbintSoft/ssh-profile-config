@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
+	"github.com/OrbintSoft/sshakku/internal/config"
+	"github.com/OrbintSoft/sshakku/internal/giveup"
 	"github.com/OrbintSoft/sshakku/internal/keyring"
 	"github.com/OrbintSoft/sshakku/internal/keys"
 	"github.com/OrbintSoft/sshakku/internal/paths"
@@ -34,6 +36,7 @@ commands:
   shell-init     drive the agent healthy and print shell assignments to eval
   ensure-agent   drive the agent to a healthy state and print agent_sock
   load-keys      add the user's ssh keys to the agent (interactive sessions)
+  askpass-env    print exports routing ssh's askpass through sshakku (GUI only)
   help           show this help
 `
 
@@ -42,7 +45,7 @@ func main() {
 	// prompt as an argument and marking the call via the environment. Handle that
 	// before subcommand dispatch and return the passphrase from the keyring.
 	if os.Getenv(keys.EnvAskpassMode) != "" {
-		os.Exit(askpass(os.Stdout))
+		os.Exit(askpass(os.Stdout, os.Args[1:]))
 	}
 	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
 }
@@ -61,6 +64,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return ensureAgent(stdout, stderr)
 	case "load-keys":
 		return loadKeys(stderr)
+	case "askpass-env":
+		return askpassEnv(stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -138,13 +143,45 @@ func ensureAgent(stdout, stderr io.Writer) int {
 	return 0
 }
 
-// askpass is the SSH_ASKPASS program ssh-add execs while adding a key: it reads
-// the passphrase the loader stashed in the @u keyring, identified by the serial in
-// $SSHAKKU_KEYCTL_SERIAL, prints it on stdout for ssh-add, and unlinks the
-// one-shot entry. The passphrase never touches stderr or argv; only the keyring
-// serial crosses the environment. Diagnostics go to the session log alone, so the
-// success path stays silent.
-func askpass(stdout io.Writer) int {
+// askpass answers an SSH_ASKPASS request. The proactive key-loading path stashes
+// the passphrase in the @u keyring and points us at it via $SSHAKKU_KEYCTL_SERIAL;
+// with a serial we serve that one-shot stash. Without one we are the reactive
+// broker for an interactive ssh whose key has expired, and answer the prompt in
+// args from the wallet (or the terminal).
+func askpass(stdout io.Writer, args []string) int {
+	if os.Getenv(keys.EnvKeyctlSerial) != "" {
+		return askpassFromKeyring(stdout)
+	}
+	return askpassBroker(stdout, args)
+}
+
+// askpassBroker answers ssh's passphrase or confirmation prompt: a key passphrase
+// comes from the wallet (or the terminal on a miss), other prompts pass through to
+// the terminal. Only the reply goes to stdout; diagnostics go to the session log.
+func askpassBroker(stdout io.Writer, args []string) int {
+	log := sessionlog.New(paths.Resolve(paths.FromOS(), paths.ProbeDir).LogFile)
+	broker := keys.Broker{
+		Secret: keys.SecretToolBackend{Runner: keys.ExecRunner{}, User: currentUser()},
+		TTY:    ttyPrompter{},
+		Log:    log,
+	}
+	reply, ok := broker.Answer(strings.Join(args, " "))
+	if !ok {
+		return 1
+	}
+	if _, err := fmt.Fprintf(stdout, "%s\n", reply); err != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("askpass: write reply: %v", err))
+		return 1
+	}
+	return 0
+}
+
+// askpassFromKeyring reads the passphrase the loader stashed in the @u keyring,
+// identified by the serial in $SSHAKKU_KEYCTL_SERIAL, prints it on stdout for
+// ssh-add, and unlinks the one-shot entry. The passphrase never touches stderr or
+// argv; only the keyring serial crosses the environment. Diagnostics go to the
+// session log alone, so the success path stays silent.
+func askpassFromKeyring(stdout io.Writer) int {
 	log := sessionlog.New(paths.Resolve(paths.FromOS(), paths.ProbeDir).LogFile)
 
 	raw := os.Getenv(keys.EnvKeyctlSerial)
@@ -203,6 +240,37 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 
+	// Settings come from the environment, the TOML config file, and built-in
+	// defaults, in that order of precedence. A missing file is fine; a path,
+	// load, or parse problem is logged and the affected setting falls back to
+	// its default.
+	var file config.File
+	if path, perr := config.DefaultPath(); perr != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: config path: %v", perr))
+	} else if f, lerr := config.Load(path); lerr != nil {
+		_ = log.Log("ERROR", fmt.Sprintf("load-keys: config %s: %v", path, lerr))
+		file = f
+	} else {
+		file = f
+	}
+	settings, errs := config.Resolve(file, os.LookupEnv)
+	for _, e := range errs {
+		_ = log.Log("ERROR", e.Error())
+	}
+
+	var giveupStore keys.GiveupStore
+	if !settings.NoGiveup {
+		giveupStore = giveup.Store{
+			Dir: filepath.Join(filepath.Dir(layout.AgentSock), "giveup"),
+			TTL: settings.GiveupTTL,
+		}
+	}
+
+	var notifier keys.Notifier
+	if !settings.Quiet {
+		notifier = stderrNotifier{w: stderr}
+	}
+
 	runner := keys.ExecRunner{}
 	prompter := keys.KDialogPrompter{Runner: runner}
 	guiEnv := keys.GUIEnv{
@@ -215,9 +283,14 @@ func loadKeys(stderr io.Writer) int {
 		Runner: runner,
 		Secret: keys.SecretToolBackend{Runner: runner, User: currentUser()},
 		Prompt: prompter,
-		Adder:  keys.ExecKeyAdder{AskpassProg: self},
+		Adder:  keys.ExecKeyAdder{AskpassProg: self, KeyLifetime: settings.KeyLifetime},
 		Log:    log,
-		Config: keys.Config{GUI: keys.GUIAvailable(guiEnv, runner, prompter)},
+		Notify: notifier,
+		Giveup: giveupStore,
+		Config: keys.Config{
+			GUI:         keys.GUIAvailable(guiEnv, runner, prompter),
+			MaxAttempts: settings.MaxAttempts,
+		},
 	}
 	if err := loader.LoadKeys(); err != nil {
 		_ = log.Log("ERROR", fmt.Sprintf("load-keys: %v", err))
@@ -225,6 +298,50 @@ func loadKeys(stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// stderrNotifier surfaces a user-facing notice to the terminal of the
+// interactive shell that ran load-keys; $SSHAKKU_QUIET suppresses it.
+type stderrNotifier struct{ w io.Writer }
+
+func (n stderrNotifier) Notify(message string) {
+	_, _ = fmt.Fprintf(n.w, "sshakku: %s\n", message)
+}
+
+// askpassEnv prints the export lines that route this interactive shell's ssh
+// passphrase prompts through sshakku's wallet-aware broker, so a key that expires
+// from the agent is refilled from the wallet without a terminal prompt. It emits
+// them only when a graphical prompter is available — a headless session keeps
+// ssh's own terminal prompting — and the login entrypoint evals it in interactive
+// shells only, never for non-interactive sessions (scp/rsync/git).
+func askpassEnv(stdout, stderr io.Writer) int {
+	runner := keys.ExecRunner{}
+	guiEnv := keys.GUIEnv{
+		WaylandDisplay: os.Getenv("WAYLAND_DISPLAY"),
+		Display:        os.Getenv("DISPLAY"),
+	}
+	if !keys.GUIAvailable(guiEnv, runner, keys.KDialogPrompter{Runner: runner}) {
+		return 0
+	}
+	self, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	if _, err := io.WriteString(stdout, askpassExports(self)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// askpassExports returns the shell `export` lines pointing ssh's SSH_ASKPASS at
+// self's wallet-aware broker; REQUIRE=prefer makes ssh consult it even with a tty.
+func askpassExports(self string) string {
+	return fmt.Sprintf(
+		"export SSH_ASKPASS=%s\nexport SSH_ASKPASS_REQUIRE=prefer\nexport %s=1\n",
+		shellSingleQuote(self), keys.EnvAskpassMode,
+	)
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,

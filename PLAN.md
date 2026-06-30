@@ -277,6 +277,18 @@ honoured) before or during the phases. Each notes the related goal.
     return to the clean state where only we run the agent — is the diagnostic tool's
     mandate (goal 8, Phase 3).
 
+16. **Which keys' passphrases are stored in the wallet is configurable (goals 2,
+    7; open decision 13).** Independently of which keys are auto-loaded (decision
+    13), the config file selects the *wallet-store* set in one of two modes: *all
+    keys except an exclude-list*, or *only an include-list*. Default: store all
+    (convenience — once typed, a passphrase is never asked again). A
+    security-conscious user excludes sensitive keys so their passphrase is never
+    persisted: it is typed each time it is needed and kept in memory only. The
+    policy is consulted at **every** wallet write — the load-keys prompt-then-store
+    path and the askpass broker's miss-then-store fallback — so an excluded key is
+    still used but never saved. Realised with the config file in the configurability
+    phase; until then every successfully typed passphrase is stored.
+
 ---
 
 ## Phases
@@ -392,6 +404,7 @@ Per-file-type lint decisions (rule 12):
 | All committed files | `editorconfig-checker` **adopted in 0.3** (config `.editorconfig-checker.json` excludes `LICENSE` verbatim, the deferred `*.zsh`, and `*.go` — gofmt owns Go formatting and legitimately allows spaces inside string literals; `.gitignore` is honoured) |
 | Shell — bats tests (`*.bats`) | Deferred to Phase 1.5 when test files enter the repo |
 | Go (`*.go`) | `gofmt -l` + `go vet ./...` + `golangci-lint` (config `.golangci.yml`, standard set); compiled by `make build`. Wired into `make lint` as `lint-go` and installed in CI (pinned). License (rule 16): the Go toolchain, its standard library (BSD-3-Clause) and `golangci-lint` are EUPL-1.2 compatible and don't obstruct relicensing — build/dev tools follow the 0.3 precedent (no bundled obligations); the third-party module list (`golang.org/x/sys`, BSD-3-Clause) is recorded in `COPYRIGHT.md`. |
+| TOML (`*.toml`) | `taplo lint` + `taplo format --check`, wired into `make lint` as `lint-toml` and installed in CI (pinned `@taplo/cli`); config `.taplo.toml` excludes only the deliberately malformed test fixture (the parser's error path, covered by Go tests). License (rule 16): the runtime parser `github.com/BurntSushi/toml` (MIT) is EUPL-1.2 compatible and doesn't obstruct relicensing, recorded in `COPYRIGHT.md`; `taplo` is a CI-only dev tool (0.3 precedent). |
 
 ### Phase 1 — Harden the primary target: shell plumbing (still bash)
 
@@ -489,8 +502,18 @@ is committable and the bash keeps working until each piece moves.
   marked by `SSHAKKU_ASKPASS`. `sshakku load-keys` is driven from the login hook in
   interactive shells; the bash askpass script is retired. GUI detection covers
   Wayland and X11.
-- **Slice 4 — retries / give-up + key-expiry**: the original Phase 2 stateful
-  logic; by here the bash is just the thin hook.
+- **Slice 4 — retries / give-up + key-expiry. ✅ Done.** Resolves open decisions
+  5 and 6. Keys expire in the agent via `ssh-add -t` (default 8h, configurable
+  with `SSHAKKU_KEY_LIFETIME`; `0` disables); a new terminal silently re-adds an
+  expired key from the wallet, and in a still-open shell the wallet-aware
+  SSH_ASKPASS broker refills it without a terminal prompt, falling back to
+  `/dev/tty` only on a wallet miss (and storing what is typed there). A wrong
+  passphrase retries up to `SSHAKKU_MAX_ATTEMPTS`, a stale stored passphrase being
+  re-prompted and replaced; after exhaustion the key is given up — notified on the
+  terminal unless `SSHAKKU_QUIET` — and skipped in new shells for
+  `SSHAKKU_GIVEUP_TTL` (per-login, tmpfs-backed; `SSHAKKU_NO_GIVEUP` opts out).
+  `internal/giveup` + `internal/keys`; the env knobs are documented in
+  `docs/CONFIGURATION.md` and the bash is now just the thin hook.
 
 ### Phase 3 — Diagnostic tool
 
@@ -505,12 +528,13 @@ threat E1.
 ### Phase 4 — Configurability & pluggable secret backends
 
 Make the secret store pluggable (secret-service first, then 1Password) and the
-tool highly parametrizable via a config file. → goals 11, 15; open decision 7.
+tool highly parametrizable via a config file under `$XDG_CONFIG_HOME/sshakku/`
+(default `~/.config/sshakku/`), into which the current `SSHAKKU_*` environment
+knobs migrate. → goals 11, 15; open decisions 7, 13, 16.
 
 ### Phase 5 — Widen the OS targets
 
-macOS as a wide port, never trust Apple; then Windows last as the most divergent target (service + named
-pipe, no socket). → goals 12, 13; open decision 8.
+macOS as a wide port, never trust Apple; then Windows last as the most divergent target (service + named pipe, no socket, use win32 safe API). → goals 12, 13; open decision 8.
 
 ### Phase 6 — Full test matrix
 

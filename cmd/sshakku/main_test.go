@@ -28,3 +28,13 @@ func TestRun(t *testing.T) {
 		})
 	}
 }
+
+func TestAskpassExports(t *testing.T) {
+	got := askpassExports("/usr/local/bin/sshakku")
+	want := "export SSH_ASKPASS='/usr/local/bin/sshakku'\n" +
+		"export SSH_ASKPASS_REQUIRE=prefer\n" +
+		"export SSHAKKU_ASKPASS=1\n"
+	if got != want {
+		t.Errorf("askpassExports = %q, want %q", got, want)
+	}
+}

@@ -1,0 +1,5 @@
+key_lifetime = "8h"
+max_attempts = 5
+giveup_ttl = "30m"
+no_giveup = true
+quiet = true
