@@ -17,6 +17,7 @@ import (
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
 	"github.com/OrbintSoft/sshakku/internal/config"
+	"github.com/OrbintSoft/sshakku/internal/diagnose"
 	"github.com/OrbintSoft/sshakku/internal/giveup"
 	"github.com/OrbintSoft/sshakku/internal/keyring"
 	"github.com/OrbintSoft/sshakku/internal/keys"
@@ -37,6 +38,7 @@ commands:
   ensure-agent   drive the agent to a healthy state and print agent_sock
   load-keys      add the user's ssh keys to the agent (interactive sessions)
   askpass-env    print exports routing ssh's askpass through sshakku (GUI only)
+  doctor         report the ssh-agent situation without changing anything
   help           show this help
 `
 
@@ -66,6 +68,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return loadKeys(stderr)
 	case "askpass-env":
 		return askpassEnv(stdout, stderr)
+	case "doctor":
+		return doctor(stdout)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -342,6 +346,25 @@ func askpassExports(self string) string {
 		"export SSH_ASKPASS=%s\nexport SSH_ASKPASS_REQUIRE=prefer\nexport %s=1\n",
 		shellSingleQuote(self), keys.EnvAskpassMode,
 	)
+}
+
+// doctor prints a read-only diagnostic of the ssh-agent situation: which agents
+// are running, which one is ours, whether each answers, and whether this shell's
+// SSH_AUTH_SOCK is wired to a healthy agent. It inspects only — it starts,
+// signals, and reaps nothing — so it never takes the start lock.
+func doctor(stdout io.Writer) int {
+	env := paths.FromOS()
+	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
+	report := diagnose.Gather(diagnose.Inputs{
+		FixedSock: layout.AgentSock,
+		LegacyDir: filepath.Join(env.Home, ".ssh", "agent"),
+		StatePath: filepath.Join(filepath.Dir(layout.AgentSock), "agent.state"),
+		EnvSock:   os.Getenv("SSH_AUTH_SOCK"),
+		LogFile:   layout.LogFile,
+		OurUID:    env.UID,
+	}, agent.Inspector{}, agent.SocketProber{})
+	diagnose.Format(stdout, report)
+	return 0
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,

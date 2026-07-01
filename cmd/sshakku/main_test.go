@@ -7,8 +7,10 @@ import (
 
 // TestRun exercises argument dispatch only. shell-init and ensure-agent are
 // omitted: both now drive the real agent lifecycle (start, reap, adopt), so
-// invoking them here would spawn and reap agents on the test host; that logic is
-// covered by the agent package's tests.
+// invoking them here would spawn and reap agents on the test host. doctor is
+// omitted for a milder version of the same reason — it reads the host's real
+// /proc and probes live sockets. That logic is covered by the agent and diagnose
+// package tests.
 func TestRun(t *testing.T) {
 	tests := []struct {
 		name string
