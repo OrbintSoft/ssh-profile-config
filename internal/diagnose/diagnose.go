@@ -53,6 +53,7 @@ type Report struct {
 	OurUID       int
 	RecordedPID  int // pid from agent.state, 0 when absent or unreadable
 	Agents       []AgentView
+	State        State
 	Findings     []string
 	LogTail      []string
 	InspectErr   error // enumeration failed; the report is partial
@@ -90,6 +91,7 @@ func Gather(in Inputs, src AgentSource, prober agent.Prober, anc AncestrySource)
 		})
 	}
 
+	r.State = classifyState(r)
 	r.LogTail = tailLines(in.LogFile, logTailLines)
 	r.Findings = findings(in, r)
 	return r
@@ -154,6 +156,7 @@ func Format(w io.Writer, r Report) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(&b, format, a...) }
 
 	p("sshakku doctor — ssh-agent diagnostics\n\n")
+	p("state: %s\n\n", r.State)
 	p("fixed socket:  %s\n", orNone(r.FixedSock))
 	p("SSH_AUTH_SOCK: %s%s\n", orUnset(r.EnvSock), envReachSuffix(r.EnvSock, r.EnvReachable))
 	if r.RecordedPID != 0 {
@@ -180,6 +183,10 @@ func Format(w io.Writer, r Report) {
 	p("\nfindings:\n")
 	for _, s := range r.Findings {
 		p("  - %s\n", s)
+	}
+
+	if rec := recommend(r.State); rec != "" {
+		p("\nrecommendation:\n  %s\n", rec)
 	}
 
 	if len(r.LogTail) > 0 {

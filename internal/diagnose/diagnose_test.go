@@ -62,6 +62,9 @@ func TestGatherHealthy(t *testing.T) {
 	if !r.EnvReachable {
 		t.Error("EnvReachable = false, want true")
 	}
+	if r.State != StateOursHealthy {
+		t.Errorf("State = %v, want StateOursHealthy", r.State)
+	}
 	if !hasFinding(r, "no problems detected") {
 		t.Errorf("findings = %v, want a clean bill", r.Findings)
 	}
@@ -193,6 +196,7 @@ func TestFormat(t *testing.T) {
 		EnvReachable: true,
 		OurUID:       1000,
 		RecordedPID:  4242,
+		State:        StateOursHealthy,
 		Agents: []AgentView{
 			{PID: 100, UID: 1000, Kind: agent.KindOurs, Socket: fixed, Reachable: true},
 			{PID: 200, UID: 1001, Kind: agent.KindForeign, Socket: "/tmp/f.sock", Reachable: false},
@@ -207,6 +211,7 @@ func TestFormat(t *testing.T) {
 
 	for _, want := range []string{
 		"ssh-agent diagnostics",
+		"state: B —",
 		"fixed socket:  " + fixed,
 		"(reachable)",
 		"recorded pid:  4242",
@@ -217,6 +222,7 @@ func TestFormat(t *testing.T) {
 		"reachable",
 		"dead",
 		"no problems detected",
+		"recommendation:",
 		"recent log:",
 		"INFO started",
 	} {
