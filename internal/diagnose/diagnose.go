@@ -42,6 +42,7 @@ type AgentView struct {
 	Kind      agent.ProcKind
 	Socket    string
 	Reachable bool
+	Ancestry  []ProcInfo // the process chain that launched it, agent first
 }
 
 // Report is the read-only picture the doctor presents.
@@ -58,9 +59,10 @@ type Report struct {
 }
 
 // Gather inspects the agent situation described by in and returns the report,
-// reading everything through src and prober so it never touches the real /proc or
-// sockets in a test. It mutates nothing.
-func Gather(in Inputs, src AgentSource, prober agent.Prober) Report {
+// reading everything through src, prober, and anc so it never touches the real
+// /proc or sockets in a test. A nil anc skips ancestry attribution. It mutates
+// nothing.
+func Gather(in Inputs, src AgentSource, prober agent.Prober, anc AncestrySource) Report {
 	r := Report{
 		FixedSock: in.FixedSock,
 		EnvSock:   in.EnvSock,
@@ -84,6 +86,7 @@ func Gather(in Inputs, src AgentSource, prober agent.Prober) Report {
 			Kind:      agent.Classify(p, in.FixedSock, in.LegacyDir),
 			Socket:    p.Socket,
 			Reachable: p.Socket != "" && prober.Reachable(p.Socket),
+			Ancestry:  ancestry(p.PID, anc),
 		})
 	}
 
@@ -124,6 +127,16 @@ func findings(in Inputs, r Report) []string {
 	if dead > 0 {
 		f = append(f, fmt.Sprintf("%d dead ssh-agent process(es) with a stale socket are lingering", dead))
 	}
+	for _, a := range r.Agents {
+		if a.Kind != agent.KindForeign || !a.Reachable {
+			continue
+		}
+		who := "an unknown launcher"
+		if label, ok := startedBy(a.Ancestry); ok {
+			who = label
+		}
+		f = append(f, fmt.Sprintf("a foreign ssh-agent (pid %d) started by %s is answering", a.PID, who))
+	}
 	if r.InspectErr != nil {
 		f = append(f, fmt.Sprintf("could not enumerate processes: %v (report is partial)", r.InspectErr))
 	}
@@ -158,6 +171,10 @@ func Format(w io.Writer, r Report) {
 		}
 		p("  pid %-7d %-7s %-9s %-6s %s\n",
 			a.PID, a.Kind, state, uidNote(a.UID, r.OurUID), orNone(a.Socket))
+		if label, ok := startedBy(a.Ancestry); ok {
+			p("    started by %s\n", label)
+			p("    %s\n", chainString(a.Ancestry))
+		}
 	}
 
 	p("\nfindings:\n")

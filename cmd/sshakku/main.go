@@ -362,7 +362,7 @@ func doctor(stdout io.Writer) int {
 		EnvSock:   os.Getenv("SSH_AUTH_SOCK"),
 		LogFile:   layout.LogFile,
 		OurUID:    env.UID,
-	}, agent.Inspector{}, agent.SocketProber{})
+	}, agent.Inspector{}, agent.SocketProber{}, diagnose.ProcfsAncestry{})
 	diagnose.Format(stdout, report)
 	return 0
 }

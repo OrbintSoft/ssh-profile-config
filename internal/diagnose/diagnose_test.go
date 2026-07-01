@@ -50,7 +50,7 @@ func TestGatherHealthy(t *testing.T) {
 		LegacyDir: legacy,
 		EnvSock:   fixed,
 		OurUID:    1000,
-	}, src, prober)
+	}, src, prober, nil)
 
 	if len(r.Agents) != 1 {
 		t.Fatalf("got %d agents, want 1", len(r.Agents))
@@ -73,7 +73,7 @@ func TestGatherEnvUnset(t *testing.T) {
 	}}
 	prober := fakeProber{up: map[string]bool{fixed: true}}
 
-	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, OurUID: 1000}, src, prober)
+	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, OurUID: 1000}, src, prober, nil)
 	if !hasFinding(r, "SSH_AUTH_SOCK is unset") {
 		t.Errorf("findings = %v, want an unset-env finding", r.Findings)
 	}
@@ -82,7 +82,7 @@ func TestGatherEnvUnset(t *testing.T) {
 func TestGatherEnvNotAnswering(t *testing.T) {
 	src := fakeSource{}
 	prober := fakeProber{} // nothing up
-	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, OurUID: 1000}, src, prober)
+	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, OurUID: 1000}, src, prober, nil)
 
 	if r.EnvReachable {
 		t.Error("EnvReachable = true, want false")
@@ -101,7 +101,7 @@ func TestGatherEnvMismatch(t *testing.T) {
 		{PID: 100, UID: 1000, Socket: other},
 	}}
 	prober := fakeProber{up: map[string]bool{other: true}}
-	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: other, OurUID: 1000}, src, prober)
+	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: other, OurUID: 1000}, src, prober, nil)
 
 	if !hasFinding(r, "not our fixed socket") {
 		t.Errorf("findings = %v, want a mismatch finding", r.Findings)
@@ -116,7 +116,7 @@ func TestGatherMultipleAndDead(t *testing.T) {
 		{PID: 300, UID: 1000, Socket: legacy + "/ssh-agent.sock"}, // legacy, dead
 	}}
 	prober := fakeProber{up: map[string]bool{fixed: true, foreign: true}}
-	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, OurUID: 1000}, src, prober)
+	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, OurUID: 1000}, src, prober, nil)
 
 	if !hasFinding(r, "2 agents are answering") {
 		t.Errorf("findings = %v, want a multiple-agents finding", r.Findings)
@@ -137,7 +137,7 @@ func TestGatherMultipleAndDead(t *testing.T) {
 func TestGatherInspectError(t *testing.T) {
 	src := fakeSource{err: errors.New("boom")}
 	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, OurUID: 1000},
-		src, fakeProber{up: map[string]bool{fixed: true}})
+		src, fakeProber{up: map[string]bool{fixed: true}}, nil)
 	if r.InspectErr == nil {
 		t.Fatal("InspectErr = nil, want the enumeration error")
 	}
@@ -152,7 +152,7 @@ func TestGatherRecordedPID(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := Gather(Inputs{FixedSock: fixed, LegacyDir: legacy, EnvSock: fixed, StatePath: statePath, OurUID: 1000},
-		fakeSource{}, fakeProber{up: map[string]bool{fixed: true}})
+		fakeSource{}, fakeProber{up: map[string]bool{fixed: true}}, nil)
 	if r.RecordedPID != 4242 {
 		t.Errorf("RecordedPID = %d, want 4242", r.RecordedPID)
 	}
