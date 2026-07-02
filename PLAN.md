@@ -525,6 +525,28 @@ which only sshakku runs the agent. Now lands after the Go core, so it is built i
 reusing the core's inspection primitives rather than as throwaway bash. → goal 8;
 threat E1.
 
+**✅ Done.** `sshakku doctor` (`internal/diagnose`, reusing the `agent` package's
+inspection primitives): a read-only report that names the agent-lifecycle state
+(the five states of open decision 15, A–E), classifies every `ssh-agent` process
+as ours/legacy/foreign, probes reachability, compares `SSH_AUTH_SOCK` against the
+fixed socket, tails the session log, and derives plain findings with a
+recommendation. It attributes each agent to its launcher by walking the `/proc`
+PPid ancestry (systemd, KDE Plasma, GNOME/GDM/SDDM/LightDM, sshd, login shells);
+because `ssh-agent` daemonizes and reparents to `init`, ancestry frequently
+dead-ends at pid 1, and the report says so rather than crediting init.
+`doctor --fix` applies the same self-heal the login path runs (`EnsureAgent`:
+reap dead, start on the fixed socket, or adopt a healthy foreign agent — never
+killing a healthy one) and re-reports; it warns that it cannot rewrite the calling
+shell's `SSH_AUTH_SOCK`. Documented in `docs/DIAGNOSTICS.md` (linked from the
+README). No new file type — the docs are Markdown, already covered by
+`markdownlint-cli2` + `editorconfig-checker` (rule 12).
+
+*Deferred refinements (not blocking):* deeper foreign-agent attribution via
+socket-path heuristics (gnome-keyring `keyring/ssh`, gpg-agent, systemd
+`ssh-agent.socket`) and environment probing to recover a launcher lost to the
+daemonize/reparent; and cross-user inspection under `sudo` for the fuller picture
+(today `doctor` resolves paths for, and reaps only, the invoking user).
+
 ### Phase 4 — Configurability & pluggable secret backends
 
 Make the secret store pluggable (secret-service first, then 1Password) and the

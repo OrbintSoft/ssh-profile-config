@@ -17,6 +17,7 @@ import (
 
 	"github.com/OrbintSoft/sshakku/internal/agent"
 	"github.com/OrbintSoft/sshakku/internal/config"
+	"github.com/OrbintSoft/sshakku/internal/diagnose"
 	"github.com/OrbintSoft/sshakku/internal/giveup"
 	"github.com/OrbintSoft/sshakku/internal/keyring"
 	"github.com/OrbintSoft/sshakku/internal/keys"
@@ -37,6 +38,7 @@ commands:
   ensure-agent   drive the agent to a healthy state and print agent_sock
   load-keys      add the user's ssh keys to the agent (interactive sessions)
   askpass-env    print exports routing ssh's askpass through sshakku (GUI only)
+  doctor         report the ssh-agent situation; --fix applies the self-heal
   help           show this help
 `
 
@@ -66,6 +68,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return loadKeys(stderr)
 	case "askpass-env":
 		return askpassEnv(stdout, stderr)
+	case "doctor":
+		return doctor(stdout, stderr, args[1:])
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
@@ -342,6 +346,68 @@ func askpassExports(self string) string {
 		"export SSH_ASKPASS=%s\nexport SSH_ASKPASS_REQUIRE=prefer\nexport %s=1\n",
 		shellSingleQuote(self), keys.EnvAskpassMode,
 	)
+}
+
+// doctor reports the ssh-agent situation: which agents are running, which one is
+// ours, whether each answers, and whether this shell's SSH_AUTH_SOCK is wired to
+// a healthy agent. Plain `doctor` inspects only and changes nothing. With --fix
+// it then applies the same self-heal the login path runs (reap dead agents,
+// start on the fixed socket, or adopt a healthy foreign one) and re-reports.
+func doctor(stdout, stderr io.Writer, args []string) int {
+	fix := false
+	for _, a := range args {
+		if a == "--fix" {
+			fix = true
+			continue
+		}
+		_, _ = fmt.Fprintf(stderr, "sshakku: doctor: unknown argument %q\n", a)
+		return 2
+	}
+
+	env := paths.FromOS()
+	layout := paths.Resolve(env, paths.ProbeDir).WithSocketToken(paths.SocketToken())
+
+	diagnose.Format(stdout, gatherReport(env, layout))
+	if !fix {
+		return 0
+	}
+
+	// --fix heals agent state, but a child process cannot rewrite this shell's
+	// SSH_AUTH_SOCK, so the current shell may still need a new login or an export.
+	_, _ = io.WriteString(stdout, "\n── applying self-heal ──\n")
+	if err := paths.Ensure(layout); err != nil {
+		_, _ = fmt.Fprintf(stderr, "sshakku: %v\n", err)
+		return 1
+	}
+	paths.CleanupLegacyAgentDir(env.Home)
+	liveSock, code := runEnsure(stderr, env, layout)
+	if code != 0 {
+		return code
+	}
+
+	_, _ = io.WriteString(stdout, "\nafter:\n\n")
+	after := gatherReport(env, layout)
+	diagnose.Format(stdout, after)
+	if after.EnvSock != liveSock {
+		_, _ = fmt.Fprintf(stdout,
+			"\nthis shell still points elsewhere; open a new shell or run:\n  export SSH_AUTH_SOCK=%s\n",
+			shellSingleQuote(liveSock))
+	}
+	return 0
+}
+
+// gatherReport builds the diagnostic report for the resolved layout, reading the
+// real procfs, sockets, and process tree. Both the read-only and --fix paths use
+// it so they present the situation identically.
+func gatherReport(env paths.Env, layout paths.Layout) diagnose.Report {
+	return diagnose.Gather(diagnose.Inputs{
+		FixedSock: layout.AgentSock,
+		LegacyDir: filepath.Join(env.Home, ".ssh", "agent"),
+		StatePath: filepath.Join(filepath.Dir(layout.AgentSock), "agent.state"),
+		EnvSock:   os.Getenv("SSH_AUTH_SOCK"),
+		LogFile:   layout.LogFile,
+		OurUID:    env.UID,
+	}, agent.Inspector{}, agent.SocketProber{}, diagnose.ProcfsAncestry{})
 }
 
 // currentUser returns the login name for the secret-store "username" attribute,
