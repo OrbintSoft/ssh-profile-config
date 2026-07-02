@@ -9,6 +9,11 @@ and loads your keys, pulling each passphrase from the OS secret store.
 Key lifetime, retry, and notification behaviour are tuned through environment
 variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+## Diagnostics
+
+`sshakku doctor` reports the state of your SSH agent, and `sshakku doctor --fix`
+repairs it — see [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). You keep the
