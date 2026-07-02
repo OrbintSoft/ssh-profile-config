@@ -21,6 +21,7 @@ func TestRun(t *testing.T) {
 		{"help", []string{"help"}, 0},
 		{"help flag", []string{"--help"}, 0},
 		{"unknown command", []string{"bogus"}, 2},
+		{"doctor unknown flag", []string{"doctor", "--bogus"}, 2},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
